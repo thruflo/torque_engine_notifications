@@ -17,7 +17,9 @@ from pyramid import config as pyramid_config
 from pyramid_torque_engine import constants
 from pyramid_torque_engine import operations as ops
 from pyramid_torque_engine import unpack
-from pyramid_torque_engine import repo
+from pyramid_torque_engine import repo as te_repo
+from pyramid_torque_engine_notifications import repo
+
 a, o, r, s = unpack.constants()
 
 from . import boilerplate
@@ -74,7 +76,7 @@ class TestNotifications(boilerplate.AppTestCase):
         # Create an eventand get it back.
         context = model.factory()
         event_id = boilerplate.createEvent(context)
-        event = repo.LookupActivityEvent()(event_id)
+        event = te_repo.LookupActivityEvent()(event_id)
 
         with transaction.manager:
             user = boilerplate.createUser()
