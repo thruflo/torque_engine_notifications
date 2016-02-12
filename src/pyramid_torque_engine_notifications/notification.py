@@ -170,7 +170,8 @@ def add_notification(config,
                      state_or_action_changes,
                      role,
                      dispatch_mapping,
-                     delay=None):
+                     delay=None,
+                     bcc=None):
 
     # Unpack.
     _, o, _, s = unpack.constants()
@@ -180,7 +181,7 @@ def add_notification(config,
         'CREATE_NOTIFICATION',
     )
 
-    create_notification_in_db = AddNotification(iface, role, dispatch_mapping, delay)
+    create_notification_in_db = AddNotification(iface, role, dispatch_mapping, delay, bcc)
     on(iface, state_or_action_changes, o.CREATE_NOTIFICATION, create_notification_in_db)
 
 

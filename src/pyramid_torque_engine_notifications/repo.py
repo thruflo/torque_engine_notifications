@@ -28,7 +28,6 @@ class NotificationFactory(object):
 
     def __init__(self, request, **kwargs):
         self.request = request
-        self.jsonify = kwargs.get('jsonify', DefaultJSONifier(request))
         self.notification_cls = kwargs.get('notification_cls', orm.Notification)
         self.notification_dispatch_cls = kwargs.get('notification_dispatch_cls',
                 orm.NotificationDispatch)
