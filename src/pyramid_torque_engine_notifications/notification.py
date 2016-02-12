@@ -14,6 +14,7 @@ from pyramid_torque_engine import unpack
 from pyramid_torque_engine import operations as ops
 
 from . import repo
+from . import util
 from pyramid import path
 
 from pyramid_simpleauth.model import get_existing_user
@@ -53,9 +54,9 @@ def send_from_notification_dispatch(request, notification_dispatch_id):
     tmpl_vars = view(request, context, send_to, event, event.action)
 
     # Set some defaults for the template vars.
-    tmpl_vars.setdefault('context', context)
+    tmpl_vars.setdefault('data', context)
     tmpl_vars.setdefault('to', send_to)
-    tmpl_vars.setdefault('from', util.extract_us(request))
+    tmpl_vars.setdefault('from', util.extract_from(request))
     tmpl_vars.setdefault('state_or_action', event.action)
     tmpl_vars.setdefault('event', event)
     tmpl_vars.setdefault('subject', '{0} {1}'.format(event.target, event.action))
@@ -63,12 +64,24 @@ def send_from_notification_dispatch(request, notification_dispatch_id):
     if bcc:
         tmpl_vars.setdefault('bcc', bcc)
 
+    # Extract form tmpl_vars and remove.
+    subject = tmpl_vars['subject']
+    to_ = tmpl_vars['to']
+    from_ = tmpl_vars['from']
+    del tmpl_vars['subject']
+    del tmpl_vars['to']
+    del tmpl_vars['from']
+
+    # Send emails / sms.
     if channel == 'email':
-        request.render_email(
-                tmpl_vars['from'],
-                tmpl_vars['to'],
-                tmpl_vars['subject'],
-                spec, tmpl_vars, **tmpl_vars)
+        email = request.render_email(
+                from_,
+                to_,
+                subject,
+                spec,
+                tmpl_vars,
+                **tmpl_vars)
+        request.send_email(email)
     elif channel == 'sms':
         pass
     else:
