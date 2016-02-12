@@ -13,7 +13,7 @@ pyramid-mako==1.0.2
 pyramid-simpleauth==0.8
 pyramid-simpleform==0.6.1
 pyramid-tm==0.12.1
-pyramid-torque-engine==0.4
+-e git+https://github.com/thruflo/pyramid_torque_engine.git@notification-system-refactor#egg=pyramid_torque_engine
 pyramid-weblayer==0.14.5
 python-dateutil==2.4.2
 repoze.lru==0.6
