@@ -2,10 +2,7 @@
 
 """Utility functions."""
 
-import logging
-logger = logging.getLogger(__name__)
-
-def extract_from(request):
+def site_email(request):
     settings = request.registry.settings
     site_email = settings.get('site.email')
     site_title = settings.get('site.title')

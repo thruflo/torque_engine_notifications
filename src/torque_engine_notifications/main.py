@@ -2,7 +2,6 @@
 
 from sqlalchemy import create_engine
 from pyramid_basemodel import bind_engine, save, Session
-from pyramid_notification import DEFAULTS
 
 from . import util
 from . import repo
@@ -19,19 +18,22 @@ AVAILABLE_CHANNELS = ['sms', 'email']
 env = os.environ
 NOTIFICATION_SINGLE_ENDPOINT = env.get('NOTIFICATION_SINGLE_ENDPOINT', None)
 
+DEFAULTS = {
+    'torque_engine_notifications.api_key': os.environ.get('TORQUE_ENGINE_NOTIFICATIONS_API_KEY'),
+}
 
 def post_notification_dispatch(dispatch):
 
     headers = {}
     for item in c.ENGINE_API_KEY_NAMES:
         key = '{0}'.format(item)
-        headers[key] = DEFAULTS['notification.api_key']
+        headers[key] = DEFAULTS['torque_engine_notifications.api_key']
 
     _ = requests.post(
                     NOTIFICATION_SINGLE_ENDPOINT,
                     headers=headers,
                     data=json.dumps(
-                        {'notification_dispatch_id': dispatch.id}))
+                        {'dispatch_id': dispatch.id}))
 
 def dispatch_user_notifications(user, user_notifications):
     """ 4. for each channel loop and either write out a single or a batch dispatch task with the

@@ -174,7 +174,7 @@ class AppTestCase(unittest.TestCase):
         config.include('pyramid_basemodel')
         config.include('pyramid_tm')
         config.include('pyramid_torque_engine')
-        config.include('pyramid_torque_engine_notifications')
+        config.include('torque_engine_notifications')
 
         # App specifics.
         cls.includeme(config)

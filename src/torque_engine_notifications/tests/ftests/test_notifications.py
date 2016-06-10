@@ -18,7 +18,7 @@ from pyramid_torque_engine import constants
 from pyramid_torque_engine import operations as ops
 from pyramid_torque_engine import unpack
 from pyramid_torque_engine import repo as te_repo
-from pyramid_torque_engine_notifications import repo
+from torque_engine_notifications import repo
 
 a, o, r, s = unpack.constants()
 

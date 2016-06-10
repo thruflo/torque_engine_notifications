@@ -4,12 +4,12 @@
 from setuptools import setup, find_packages
 
 setup(
-    name = 'pyramid_torque_engine_notifications',
-    version = '0.0.1',
-    description = 'Pyramid torque engine notification system based on nTorque based dual queue work engine system.',
+    name = 'torque_engine_notifications',
+    version = '0.2.0',
+    description = 'Extend pyramid_torque_engine with a configurable notification system.',
     author = 'Andre Prado',
     author_email = 'username: andreprado88, domain: gmail.com',
-    url = 'http://github.com/andrecp/pyramid_torque_engine_notifications',
+    url = 'http://github.com/thruflo/torque_engine_notifications',
     classifiers = [
         'Development Status :: 3 - Alpha',
         'Environment :: Web Environment',
@@ -27,13 +27,8 @@ setup(
     include_package_data = True,
     zip_safe = False,
     install_requires=[
-        'fysom',
-        'pyramid_basemodel',
-        'pyramid_simpleauth',
         'pyramid_torque_engine',
         'pyramid_postmark',
-        'transaction',
-        'zope.interface'
     ],
     tests_require = [
         'coverage',
@@ -42,7 +37,7 @@ setup(
     ],
     entry_points = {
         'console_scripts': [
-            'pyramid_notification = pyramid_torque_engine_notifications.notification_executer:run'
+            'pyramid_notification = torque_engine_notifications.main:run'
         ]
     }
 )

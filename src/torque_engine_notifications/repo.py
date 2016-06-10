@@ -3,6 +3,7 @@
 """Create and lookup notifications."""
 
 __all__ = [
+    'QueryDueDispatches',
     'NotificationFactory',
     'LookupNotification',
     'LookupNotificationDispatch',
@@ -94,11 +95,17 @@ class LookupNotificationDispatch(object):
 
         return self.model_cls.query.get(id_)
 
-    def by_notification_id(self, id_, type=u'email'):
-        """Lookup all notification dispatches that belong to
-        the notification id and type."""
+class QueryDueDispatches(object):
+    """Get a notification's due dispatches."""
 
-        return self.model_cls.query.filter_by(notification_id=id_).all()
+    def __init__(self, **kwargs):
+        self.model_cls = kwargs.get('model_cls', orm.NotificationDispatch)
+
+    def __call__(self, notification, dt):
+        model_cls = self.model_cls
+        query = model_cls.query.filter_by(notification_id==notification.id)
+        query = query.filter(model_cls.due<dt)
+        return query
 
 def get_or_create_notification_preferences(user):
     """Gets or creates the notification preferences for the user."""
