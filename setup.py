@@ -27,8 +27,11 @@ setup(
     include_package_data = True,
     zip_safe = False,
     install_requires=[
+        'pyramid_basemodel',
+        'pyramid_simpleauth',
         'pyramid_torque_engine',
         'pyramid_postmark',
+        # 'pyramid_twilio',
     ],
     tests_require = [
         'coverage',
@@ -37,7 +40,7 @@ setup(
     ],
     entry_points = {
         'console_scripts': [
-            'pyramid_notification = torque_engine_notifications.main:run'
+            'torque_engine_notifications = torque_engine_notifications.main:run'
         ]
     }
 )
