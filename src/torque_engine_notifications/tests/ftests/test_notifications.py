@@ -87,9 +87,9 @@ class TestNotifications(boilerplate.AppTestCase):
             self.assertTrue(notification)
 
         with transaction.manager:
-            # The user didn't had preference before, he should have
+            # The user didn't had preferences before, he should have
             # default settings as it was lazily created on the factory.
             bm.Session.add(user)
-            notification_preference = user.notification_preference
-            self.assertIsNone(notification_preference.frequency)
-            self.assertEqual(notification_preference.channel, 'email')
+            preferences = user.preferences
+            self.assertIsNone(preferencesfrequency)
+            self.assertEqual(preferences.channel, 'email')

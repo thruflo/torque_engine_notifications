@@ -1,135 +1,162 @@
 # -*- coding: utf-8 -*-
 
-"""
+"""Model classes encapsulating ``Notification``s, their ``Dispatch``
+  and a user's notification ``Preferences``.
 """
 
 __all__ = [
+    'Dispatch',
     'Notification',
-    'NotificationDispatch',
-    'NotificationPreference',
+    'Preferences',
 ]
 
 import os
 
 from datetime import datetime
 
-from sqlalchemy import event
 from sqlalchemy import orm
 from sqlalchemy import schema
-from sqlalchemy import sql
 from sqlalchemy import types
-from sqlalchemy.dialects import postgresql
-from sqlalchemy.ext import associationproxy as proxy
-from sqlalchemy.ext import declarative
-from sqlalchemy.ext import hybrid
 
 import pyramid_basemodel as bm
-from pyramid_simpleauth import model as simpleauth_model
 
-# XXX make settings configurable.
-from pyramid_torque_engine.orm import ActivityEvent
+from . import constants
 
-
-class NotificationDispatch(bm.Base, bm.BaseMixin):
-    """A notification dispatch to an user, holds information about how to deliver
-    and when."""
-
-    __tablename__ = 'notifications_dispatch'
-
-    # Has a due date.
-    due = schema.Column(types.DateTime)
-
-    # Has a sent date.
-    sent = schema.Column(types.DateTime)
-
-    # has a Notification.
-    notification_id = schema.Column(
-        types.Integer,
-        schema.ForeignKey('notifications.id'),
-    )
-
-    # bcc info
-    bcc = schema.Column(types.Unicode(96))
-    # view  -> function to decode things
-    view = schema.Column(types.Unicode(96))
-    # simple for the moment, either single or batch text. XXX use ENUM.
-    type_ = schema.Column(types.Unicode(96))
-    # dotted path for the asset spec.
-    single_spec = schema.Column(types.Unicode(96))
-    batch_spec = schema.Column(types.Unicode(96))
-    # simple for the moment, either email or sms. XXX use ENUM.
-    category = schema.Column(types.Unicode(96))
-    # email or telephone number
-    address = schema.Column(types.Unicode(96))
-
-class Notification(bm.Base, bm.BaseMixin):
-    """A notification about an event that should be sent to an user."""
-
-    __tablename__ = 'notifications'
-
-    # has an user.
-    user_id = schema.Column(
-        types.Integer,
-        schema.ForeignKey('auth_users.id'),
-    )
-
-    user = orm.relationship(
-        simpleauth_model.User,
-        backref='notification',
-    )
-
-    # Has a read date.
-    read = schema.Column(types.DateTime)
-
-    notification_dispatch = orm.relationship(
-        NotificationDispatch,
-        backref='notification')
-
-    # has an Activity event.
-    # One to many
-    event_id = schema.Column(
-        types.Integer,
-        schema.ForeignKey('activity_events.id'),
-    )
-    event = orm.relationship(
-        ActivityEvent,
-        backref=orm.backref(
-            'notification',
-        ),
-    )
-
-    def __json__(self, request=None):
-        """Represent the event as a JSON serialisable dict."""
-
-        data = {
-            'id': self.id,
-            'user_id': self.user_id,
-            'created_at': self.created.isoformat(),
-            'read_at': self.read.isoformat(),
-            'event_id': self.event_id,
-        }
-        return data
-
-class NotificationPreference(bm.Base, bm.BaseMixin):
-    """Encapsulate user's notification preferences."""
+class Preferences(bm.Base, bm.BaseMixin):
+    """Encapsulate a user's notification preferences."""
 
     __tablename__ = 'notification_preferences'
 
-    # Belongs to a user.
-    user_id = schema.Column(types.Integer, schema.ForeignKey('auth_users.id'))
-    user = orm.relationship(simpleauth_model.User, single_parent=True,
-            backref=orm.backref('notification_preference', single_parent=True, uselist=False))
+    # Belongs (one-to-one) to a user.
+    user_id = schema.Column(
+        types.Integer,
+        schema.ForeignKey('auth_users.id'),
+        nullable=False,
+    )
+    user = orm.relationship(
+        'pyramid_simpleauth.model.User',
+        single_parent=True,
+        backref=orm.backref(
+            'preferences',
+            single_parent=True,
+            uselist=False,
+        )
+    )
 
-    # Optional notification preferences.
-    # simple for the moment, either sms or email text. XXX use ENUM.
-    channel = schema.Column(types.Unicode(96))
-    # simple for the moment, either daily or weekly. XXX use ENUM.
-    frequency = schema.Column(types.Unicode(96))
+    # Record the channel they'd like to be notified through and how
+    # often they want to be notified.
+    channel = schema.Column(
+        types.Unicode(6),
+        default=constants['email'],
+        nullable=False,
+    )
+    frequency = schema.Column(
+        types.Unicode(96),
+        default=constants['immediately'],
+        nullable=False,
+    )
 
-    def __json__(self, request=None):
-        return {
-            'id': self.id,
-            'frequency': self.frequency,
-            'channel': self.channel,
-            'user_id': self.user_id,
-        }
+    # Flag properties.
+    def disabled(self):
+        return self.frequency == constants.FREQUENCIES['never']
+
+    def enabled(self):
+        return not self.enabled
+
+    def send_immediately(self):
+        return self.frequency == constants.FREQUENCIES['immediately']
+
+class Notification(bm.Base, bm.BaseMixin):
+    """Notify a user about an event."""
+
+    __tablename__ = 'notifications'
+
+    # Notify a user.
+    user_id = schema.Column(
+        types.Integer,
+        schema.ForeignKey('auth_users.id'),
+        nullable=False,
+    )
+    user = orm.relationship(
+        'pyramid_simpleauth.model.User',
+        backref=orm.backref(
+            'notifications,
+            single_parent=True,
+        )
+    )
+
+    # About an event.
+    event_id = schema.Column(
+        types.Integer,
+        schema.ForeignKey('activity_events.id'),
+        nullable=False,
+    )
+    event = orm.relationship(
+        'pyramid_torque_engine.orm.ActivityEvent',
+        backref=orm.backref(
+            'notifications,
+            single_parent=True,
+        ),
+    )
+
+    # Record when dispatches have been spawned.
+    spawned = schema.Column(
+        types.DateTime,
+    )
+
+    # Potentially record when this notification has been read.
+    read = schema.Column(
+        types.DateTime,
+    )
+
+class Dispatch(bm.Base, bm.BaseMixin):
+    """Encapsulate the dispatch of a notification."""
+
+    __tablename__ = 'notification_dispatches'
+
+    # Belongs to a notification.
+    notification_id = schema.Column(
+        types.Integer,
+        schema.ForeignKey('notifications.id'),
+        nullable=False,
+    )
+    notification = orm.relationship(
+        Notification,
+        backref=orm.backref(
+            'dispatches',
+            single_parent=True,
+        )
+    )
+
+    # How should it be sent?
+    channel = schema.Column(
+        types.Unicode(6),
+        nullable=False
+    )
+    view = schema.Column(
+        types.Unicode(128),
+    )
+    spec = schema.Column(
+        types.Unicode(255),
+    )
+    batch_spec = schema.Column(
+        types.Unicode(255),
+    )
+
+    # To whom? Note that these can be email, phone number -- whatever
+    # primary identifier the channel requires.
+    to_address = schema.Column(
+        types.Unicode(255),
+    )
+    bcc_address = schema.Column(
+        types.Unicode(255),
+    )
+
+    # When should it be sent and when was it sent?
+    due = schema.Column(
+        types.DateTime,
+        nullable=False,
+    )
+    sent = schema.Column(
+        types.DateTime,
+    )

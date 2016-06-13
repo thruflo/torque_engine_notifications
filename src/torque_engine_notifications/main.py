@@ -1,19 +1,18 @@
 # -*- coding: utf-8 -*-
 
-from sqlalchemy import create_engine
-from pyramid_basemodel import bind_engine, save, Session
-
-from . import util
-from . import repo
-from . import orm
-
 import os
 import datetime
 import json
 import requests
 import transaction
 
-AVAILABLE_CHANNELS = ['sms', 'email']
+from sqlalchemy import create_engine
+from pyramid_basemodel import bind_engine, save, Session
+
+from . import constants
+from . import orm
+from . import repo
+from . import util
 
 env = os.environ
 NOTIFICATION_SINGLE_ENDPOINT = env.get('NOTIFICATION_SINGLE_ENDPOINT', None)
@@ -37,10 +36,12 @@ def post_notification_dispatch(dispatch):
 
 def dispatch_user_notifications(user, user_notifications):
     """ 4. for each channel loop and either write out a single or a batch dispatch task with the
-        NotificationDispatcher ids e.g: /dispatch_email, /dispatch_sms and etc.
+        Dispatcher ids e.g: /dispatch_email, /dispatch_sms and etc.
     """
 
-    for ch in AVAILABLE_CHANNELS:
+    raise NotImplementedError('XXX how is this using channels???')
+
+    for ch in constants.CHANNELS.values():
         # XXX check for preferences e.g: and user.channel == ch
         to_dispatch = [d for d in user_notifications if d.category == ch]
         for dispatch in to_dispatch:
@@ -57,17 +58,21 @@ def run():
 
     # Prepare.
     notification_cls = orm.Notification
-    notification_dispatch_cls = orm.NotificationDispatch
-    notification_preference_factory = repo.NotificationPreferencesFactory()
-    now = datetime.datetime.now()
+    dispatch_cls = orm.Dispatch
+    preferences_factory = repo.PreferencesFactory()
+    now = datetime.datetime.utcnow()
 
     # Run the algorithm.
     with transaction.manager:
+
+        # XXX this is core business logic!
+        # put it in the bloody repo!
+
         # 1. ignore all the notifications from the Notification table that have read field set.
-        unread_notifications = notification_dispatch_cls.query.join(notification_cls).filter(notification_cls.read == None)
+        unread_notifications = dispatch_cls.query.join(notification_cls).filter(notification_cls.read == None)
 
         # 2. get all of the non duplicated user ids who are due to dispatch and have not been sent.
-        due_to_dispatch = unread_notifications.filter(notification_dispatch_cls.due <= now).filter(notification_dispatch_cls.sent == None)
+        due_to_dispatch = unread_notifications.filter(dispatch_cls.due <= now).filter(dispatch_cls.sent == None)
         user_ids_to_dispatch = set()
         for dispatch in due_to_dispatch.all():
             user_ids_to_dispatch.add(dispatch.notification.user_id)
@@ -75,12 +80,12 @@ def run():
         # 3. for each user id get all of the notifications grouped by channel
         for user_id in user_ids_to_dispatch:
             # Build the NotificationPreference object so we can get the preferences.
-            user = orm.NotificationPreference.query.filter_by(user_id=user_id).all()[-1]
+            prefs = orm.Preferences.query.filter_by(user_id=user_id).all()[-1]
             # If we don't have a notification preference object, we just create it on the fly.
-            if user is None:
-                user = notification_preference_factory(user_id)
+            if prefs is None:
+                prefs = preferences_factory(user_id)
             user_notifications = due_to_dispatch.filter(notification_cls.user_id == user_id).all()
-            dispatch_user_notifications(user, user_notifications)
+            dispatch_user_notifications(prefs, user_notifications)
 
 
 if __name__ == '__main__':

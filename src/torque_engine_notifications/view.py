@@ -18,7 +18,7 @@ def single_dispatch_view(request):
     """View to handle a single notification dispatch"""
 
     schema = SingleDispatchSchema()
-    lookup = repo.LookupNotificationDispatch()
+    lookup = repo.LookupDispatch()
 
     # Decode JSON.
     try:

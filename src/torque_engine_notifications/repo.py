@@ -3,139 +3,257 @@
 """Create and lookup notifications."""
 
 __all__ = [
-    'QueryDueDispatches',
+    'DispatchJSON',
+    'GetDispatchAddress',
+    'GetOrCreatePreferences',
+    'LookupDispatch',
+    'Notify',
     'NotificationFactory',
-    'LookupNotification',
-    'LookupNotificationDispatch',
-    'NotificationPreferencesFactory',
-    'get_or_create_notification_preferences',
+    'NotificationJSON',
+    'PreferencesFactory',
+    'PreferencesJSON',
+    'QueryDueDispatches',
+    'SpawnDispatches',
 ]
 
 import logging
 logger = logging.getLogger(__name__)
 
-import json
+from datetime import datetime
+from dateutil import relativedelta
+
 import pyramid_basemodel as bm
 
+from . import constants
 from . import orm
 from . import util
 
-import datetime
-from dateutil.relativedelta import relativedelta
+class Notify(object):
+    """Create a notification and iff the user's notification preferences are
+      *immediate* then also spawn the necessary dispatch(es).
+    """
 
+    def __init__(self, **kwargs):
+        self.factory = kwargs.get('factory', NotificationFactory())
+        self.get_prefs = kwargs.get('get_prefs', GetOrCreatePreferences())
+        self.spawn = kwargs.get('spawn', SpawnDispatches())
+
+    def __call__(self, user, event, mapping, **spawn_kwargs):
+        """Create and conditionally spawn."""
+
+        # Create.
+        notification = self.factory(user, event)
+
+        # If we should send immediately then spawn the dispatches.
+        prefs = self.get_prefs(user)
+        if prefs.send_immediately:
+            dispatches = self.spawn(notification, prefs, mapping, **spawn_kwargs)
+            return notification, dispatches
+
+        # Otherwise our work is done.
+        return notification, None
 
 class NotificationFactory(object):
-    """Boilerplate to create and save ``Notification``s."""
+    """Create and save a ``Notification``."""
 
-    def __init__(self, request, **kwargs):
-        self.request = request
-        self.notification_cls = kwargs.get('notification_cls', orm.Notification)
-        self.notification_dispatch_cls = kwargs.get('notification_dispatch_cls',
-                orm.NotificationDispatch)
-        self.notification_preference_factory = kwargs.get('notification_preference_factory',
-                NotificationPreferencesFactory())
+    def __init__(self, **kwargs):
+        self.model_cls = kwargs.get('model_cls', orm.Notification)
         self.session = kwargs.get('session', bm.Session)
 
-    def __call__(self, event, user, dispatch_mapping, delay=None, bcc=None):
-        """Create and store a notification and a notification dispatch."""
+    def __call__(self, user, event):
+        """Create, save, flush and return a ``Notification``."""
 
         # Unpack.
         session = self.session
         request = self.request
 
-        # Create notification.
-        notification = self.notification_cls(user=user, event=event)
-        session.add(notification)
-        due = datetime.datetime.now()
-        email = user.best_email.address
+        # Create the notification.
+        inst = self.model_cls()
+        inst.user = user
+        inst.event = event
 
-        # Get or create user preferences.
-        preference = get_or_create_notification_preferences(user)
-        timeframe = preference.frequency
+        # Save, flush and return.
+        session.add(inst)
+        session.flush()
+        return inst
 
-        # If daily normalise to 20h of each day.
-        if timeframe == 'daily':
-            if due.hour > 20:
-                due = datetime.datetime(due.year, due.month, due.day + 1, 20)
-            else:
-                due = datetime.datetime(due.year, due.month, due.day, 20)
+class NotificationJSON(object):
+    """JSON Represention of a notification."""
 
-        # If hourly normalise to the next hour.
-        elif timeframe == 'hourly':
-            due = datetime.datetime(due.year, due.month, due.day, due.hour + 1, 0)
+    def __init__(self, request):
+        self.request = request
 
-        # Check if there's a delay in minutes add to it.
+    def __call__(self, inst):
+        return {
+            'id': inst.id,
+            'type': inst.class_slug,
+            'event': {
+                'type': 'activity_events',
+                'id': inst.event_id,
+            }
+            'read': inst.read,
+            'spawned': inst.spawned,
+            'user': {
+                'type': 'auth_users',
+                'id': inst.user_id,
+            },
+        }
+
+class GetOrCreatePreferences(object):
+    """Get or creates the notification preferences for a user."""
+
+    def __init__(self, **kwargs):
+        self.factory = kwargs.get('factory', PreferencesFactory)
+
+    def __call__(self, user):
+        prefs = user.notification_preferences
+        if not prefs:
+            prefs = self.factory(user)
+        return prefs
+
+class PreferencesFactory(object):
+    """Create and save a user's notification ``Preferences``."""
+
+    def __init__(self, **kwargs):
+        self.model_cls = kwargs.get('model_cls', orm.Preferences)
+        self.session = kwargs.get('session', bm.Session)
+
+    def __call__(self, user, **props):
+        """Create, save, flush and return."""
+
+        # Unpack.
+        model_cls = self.model_cls
+        session = self.session
+
+        # Create.
+        inst = model_cls(**props)
+        inst.user = user
+
+        # Save and return.
+        session.add(inst)
+        session.flush()
+        return inst
+
+class PreferencesJSON(object):
+    """JSON Represention of a user's notification preferences."""
+
+    def __init__(self, request):
+        self.request = request
+
+    def __call__(self, inst):
+        return {
+            'id': inst.id,
+            'type': inst.class_slug,
+            'frequency': inst.frequency,
+            'channel': inst.channel,
+            'user': {
+                'type': 'auth_users',
+                'id': inst.user_id,
+            }
+        }
+
+class SpawnDispatches(object):
+    """Spawn dispatches for a notification."""
+
+    def __init__(self, **kwargs):
+        self.get_address = kwargs.get('get_address', GetDispatchAddress())
+        self.model_cls = kwargs.get('model_cls', orm.Dispatch)
+
+    def __call__(self, notification, prefs, mapping, delay=None, bcc=None):
+        """Given a notification, the current user notification preferences and the
+          configured dispatch mapping, spawn the necessary notification dispatches.
+        """
+
+        # Unpack.
+        get_address = self.get_address
+        model_cls = self.model_cls
+
+        # If there's nothing to send, we're golden.
+        config = mapping.get(prefs.channel, None)
+        if not config:
+            return
+
+        # Otherwise prepare...
+        channel = prefs.channel
+        address = get_address(notification.user, channel)
+        now = datetime.utcnow()
+        due = now
         if delay:
-            delay = relativedelta(minutes=delay)
-            due = due + delay
-        if bcc:
-            if bcc is True or bcc == '':
-                bcc = util.extract_us(request)
+            due += relativedelta(seconds=delay)
 
-        # Create a notification dispatch for each channel.
-        for k, v in dispatch_mapping.items():
-            notification_dispatch = self.notification_dispatch_cls(notification=notification,
-                    due=due, category=k, view=v['view'], bcc=bcc,
-                    single_spec=v['single'], batch_spec=v['batch'], address=email)
-            session.add(notification_dispatch)
+        # ... and spawn the dispatch.
+        inst = model_cls(address=address, channel=channel, due=due)
+        inst.view = config['view']
+        inst.spec = config['spec']
+        inst.batch_spec = = config['batch_spec']
+        inst.notification = notification
+
+        # Record that the notification has been dealt with.
+        notification.spawned = now
 
         # Save to the database.
+        session.add(inst)
+        session.add(notification)
         session.flush()
 
-        return notification
+        # Return a list of the dispatches spawned.
+        dispatches = [inst]
+        return dispatches
 
-class LookupNotificationDispatch(object):
+class GetDispatchAddress(object):
+    """Given a ``user`` and their notification ``prefs``, figure out the address
+      to dispatch to.
+    """
+
+    def __call__(self, user, channel):
+        """Currently we only support the user's preferred email."""
+
+        if channel != constants.CHANNELS['email']:
+            raise NotImplementedError
+
+        return user.best_email.address
+
+class LookupDispatch(object):
     """Lookup notifications dispatch."""
 
     def __init__(self, **kwargs):
-        self.model_cls = kwargs.get('model_cls', orm.NotificationDispatch)
+        self.model_cls = kwargs.get('model_cls', orm.Dispatch)
 
     def __call__(self, id_):
-        """Lookup by notifiction dispatch id."""
-
         return self.model_cls.query.get(id_)
 
 class QueryDueDispatches(object):
     """Get a notification's due dispatches."""
 
     def __init__(self, **kwargs):
-        self.model_cls = kwargs.get('model_cls', orm.NotificationDispatch)
+        self.model_cls = kwargs.get('model_cls', orm.Dispatch)
 
     def __call__(self, notification, dt):
         model_cls = self.model_cls
-        query = model_cls.query.filter_by(notification_id==notification.id)
+        query = model_cls.query.filter_by(notification_id=notification.id)
         query = query.filter(model_cls.due<dt)
         return query
 
-def get_or_create_notification_preferences(user):
-    """Gets or creates the notification preferences for the user."""
-    notification_preference_factory = NotificationPreferencesFactory()
-    preference = user.notification_preference
-    if preference is None:
-        preference = notification_preference_factory(user.id)
-        bm.Session.add(user)
-    return preference
+class DispatchJSON(object):
+    """JSON Represention of a the dispatch of a notification."""
 
-class NotificationPreferencesFactory(object):
-    """Boilerplate to create and save ``Notification preference``s."""
+    def __init__(self, request):
+        self.request = request
 
-    def __init__(self, **kwargs):
-        self.notification_preference_cls = kwargs.get('notification_preference_cls',
-                orm.NotificationPreference)
-        self.session = kwargs.get('session', bm.Session)
-
-    def __call__(self, user_id, frequency=None, channel='email'):
-        """Create and store a notification and a notification dispatch."""
-
-        # Unpack.
-        session = self.session
-
-        # Create notification.
-        notification_preference = self.notification_preference_cls(
-                user_id=user_id, frequency=frequency, channel=channel)
-
-        # Save to the database.
-        session.add(notification_preference)
-        session.flush()
-
-        return notification_preference
+    def __call__(self, inst):
+        return {
+            'id': inst.id,
+            'type': inst.class_slug,
+            'batch_spec': inst.batch_spec
+            'bcc_address': inst.bcc_address,
+            'channel': inst.channel,
+            'due': inst.due,
+            'notification': {
+                'type': 'notifications',
+                'id': inst.notification_id
+            },
+            'sent': inst.sent,
+            'spec': inst.spec
+            'to_address': inst.to_address,
+            'view': inst.view,
+        }

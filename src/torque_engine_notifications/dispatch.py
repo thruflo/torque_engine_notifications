@@ -153,4 +153,4 @@ class Dispatcher(object):
 
 def includeme(config):
     config.include('pyramid_postmark')
-    config.add_request_method(NotificationDispatcher, 'notifications', reify=True)
+    config.add_request_method(Dispatcher, 'notifications', reify=True)
