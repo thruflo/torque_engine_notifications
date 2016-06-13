@@ -3,66 +3,116 @@
 """Dispatch notifications."""
 
 import json
-
 from datetime import datetime
 
+from twilio import rest as tw_rest
+
 from pyramid import path as pm_path
+from pyramid import renderers
+from pyramid_weblayer import tx
 
 from . import repo
 from . import util
 
+DEFAULTS = {
+    'twilio.account_sid': os.environ.get('TWILIO_ACCOUNT_SID'),
+    'twilio.auth_token': os.environ.get('TWILIO_AUTH_TOKEN'),
+    'twilio.from_address': os.environ.get('TWILIO_FROM_ADDRESS'),
+}
+
+def site_email(request):
+    settings = request.registry.settings
+    site_email = settings.get('site.email')
+    site_title = settings.get('site.title')
+    return u'{0} <{1}>'.format(site_title, site_email)
+
+def site_mobile(request):
+    settings = request.registry.settings
+    return settings.get('twilio.from_address')
+
 class PostmarkEmailSender(object):
     """Send an email using the postmarkapp.com service."""
 
-    def __init__(self, request):
+    def __init__(self, request, **kwargs):
         self.request = request
+        self.from_address = site_email(request)
+        self.send = kwargs.get('send', request.send_email)
 
     def __call__(self, spec, data):
         request = self.request
         email = request.render_email(
-            data['from_address'],
+            self.from_address,
             data['to_address']
             data['subject']
             data['spec']
             data,
             bcc=data['bcc_address'],
         )
-        return request.send_email(email)
+        return self.send(email)
 
 class StubEmailSender(object):
     """Render and print an email, rather than actually sending it."""
 
     def __init__(self, request):
-        self.request = request
+        self.sender = PostmarkEmailSender(request, send=self.log)
 
     def __call__(self, spec, data):
-        request = self.request
-        email = request.render_email(
-            data['from_address'],
-            data['to_address']
-            data['subject']
-            data['spec']
-            data,
-            bcc=data['bcc_address'],
-        )
+        return self.sender(spec, data)
+
+    def log(self, email):
         email_data = email.to_json_message()
         logger.info(('StubEmailSender', 'would send email'))
         logger.info(json.dumps(email_data, indent=2))
         return email_data
 
-### TODO: a real ``SMSSender``.
-
-class StubSMSSender(object):
-    """Render and print an SMS, rather than actually sending it."""
+class TwilioAPI(request):
+    """Configure a Twilio rest api client to send SMSs with and provide
+      a `send_sms` method that dispatches when the current transaction succeeds.
+    """
 
     def __init__(self, request):
+        settings = request.registry.settings
+        account_sid = settings['twilio.account_sid']
+        auth_token = settings['twilio.auth_token']
+        self.client = tw_rest.TwilioRestClient(account_sid, auth_token)
+        self.join_tx = tx.join_to_transaction
+
+    def send_sms(self, **kwargs):
+        tx.join_to_transaction(self.send_sms_immediately, **kwargs)
+
+    def send_sms_immediately(self, **kwargs):
+        return self.client.messages.create(**kwargs)
+
+class TwilioSMSSender(object):
+    """Send an SMS using Twilio."""
+
+    def __init__(self, request, **kwargs):
         self.request = request
+        self.from_address = site_mobile(request)
+        self.render = renderers.render
+        self.send = kwargs.get('send', request.twilio.send_sms)
 
     def __call__(self, spec, data):
         request = self.request
-        sms = NotImplemented
-        sms_data = NotImplemented
-        logger.info(('StubSMSSender', 'would send sms'))
+        sms_body = self.render(spec, data, request=request)
+        sms_data = {
+            'from_': self.from_address,
+            'to': data['to_address'],
+            'body': sms_body,
+        }
+        return self.send(**sms_data)
+
+class StubEmailSender(object):
+    """Render and print an email, rather than actually sending it."""
+
+    def __init__(self, request):
+        self.sender = TwilioSMSSender(request, send=self.log)
+
+    def __call__(self, spec, data):
+        return self.sender(spec, data)
+
+    def log(self, **sms_data):
+        logger.info(('StubEmailSender', 'would send sms'))
         logger.info(json.dumps(sms_data, indent=2))
         return sms_data
 
@@ -78,16 +128,15 @@ class Dispatcher(object):
     def __init__(self, request, **kwargs):
         self.request = request
         self.now = datetime.utcnow
-        self.from_email = site_email(request)
         self.resolve = pm_path.DottedNameResolver().resolve
         # Swap out utilities according to the environment.
         is_testing = request.environ.get('paste.testing', False)
         if is_testing:
-            self.send_email = kwargs.get('send_email', PostmarkEmailSender(request))
-            self.send_sms = kwargs.get('send_sms', NotImplemented)
-        else:
             self.send_email = kwargs.get('send_email', StubEmailSender(request))
             self.send_sms = kwargs.get('send_sms', StubSMSSender(request))
+        else:
+            self.send_email = kwargs.get('send_email', PostmarkEmailSender(request))
+            self.send_sms = kwargs.get('send_sms', TwilioSMSSender(request))
         self.query_due = kwargs.get('query_due', repo.QueryDueDispatches())
 
     def dispatch(self, notifications):
@@ -126,7 +175,6 @@ class Dispatcher(object):
         defaults = {
             'subject': default_subject,
             'to_address': dispatch.address,
-            'from_address': self.from_email,
             'bcc_address': dispatch.bcc,
             'target': target,
             'event': event,
@@ -152,5 +200,18 @@ class Dispatcher(object):
         return return_value
 
 def includeme(config):
+    """Apply default settings, configure postmark and twilio clients and
+      provide the `request.notifications` api.
+    """
+
+    # Settings.
+    setting = config.get_settings()
+    for k, value in DEFAULTS.items():
+        settings.setdefault(k, value)
+
+    # Clients.
     config.include('pyramid_postmark')
+    config.add_request_method(TwilioAPI, 'twilio', reify=True)
+
+    # API.
     config.add_request_method(Dispatcher, 'notifications', reify=True)
