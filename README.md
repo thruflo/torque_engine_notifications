@@ -10,3 +10,7 @@ Well! Then it's only reasonable that you should tire of manually configuring hoo
 [Pyramid]: http://www.pylonsproject.org/projects/pyramid/about
 [nTorque]: http://ntorque.com/
 [pyramid_torque_engine]: https://github.com/thruflo/pyramid_torque_engine
+
+## Usage
+
+- XXX document the signature / behaviour of the role mapping and get_users function

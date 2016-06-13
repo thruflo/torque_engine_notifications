@@ -99,6 +99,22 @@ class Notification(bm.Base, bm.BaseMixin):
         ),
     )
 
+    # Optionally recording the roles that the user matched when
+    # creating this notification. This allows template rendering
+    # to adapt according to the role.
+    role_str = schema.Column(
+        types.Unicode(128),
+    )
+    @property
+    def roles(self):
+        return self.role_str.split(u',')
+
+    @roles.setter
+    def roles(self, roles):
+        if not roles:
+            roles = []
+        self.role_str = u','.join(roles)
+
     # Record when dispatches have been spawned.
     spawned = schema.Column(
         types.DateTime,

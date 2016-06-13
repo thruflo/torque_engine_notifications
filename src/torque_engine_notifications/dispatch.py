@@ -48,7 +48,12 @@ class PostmarkEmailSender(object):
             data,
             bcc=data['bcc_address'],
         )
-        return self.send(email)
+        self.send(email)
+        email_data = email.to_json_message()
+        return {
+            'type': 'email',
+            'data': email_data,
+        }
 
 class StubEmailSender(object):
     """Render and print an email, rather than actually sending it."""
@@ -63,7 +68,10 @@ class StubEmailSender(object):
         email_data = email.to_json_message()
         logger.info(('StubEmailSender', 'would send email'))
         logger.info(json.dumps(email_data, indent=2))
-        return email_data
+        return {
+            'type': 'email',
+            'data': email_data,
+        }
 
 class TwilioAPI(request):
     """Configure a Twilio rest api client to send SMSs with and provide
@@ -100,7 +108,11 @@ class TwilioSMSSender(object):
             'to': data['to_address'],
             'body': sms_body,
         }
-        return self.send(**sms_data)
+        self.send(**sms_data)
+        return {
+            'type': 'sms',
+            'data': sms_data,
+        }
 
 class StubEmailSender(object):
     """Render and print an email, rather than actually sending it."""
@@ -114,7 +126,10 @@ class StubEmailSender(object):
     def log(self, **sms_data):
         logger.info(('StubEmailSender', 'would send sms'))
         logger.info(json.dumps(sms_data, indent=2))
-        return sms_data
+        return {
+            'type': 'sms',
+            'data': sms_data,
+        }
 
 class Dispatcher(object):
     """Utility that provides an api to:
@@ -138,6 +153,8 @@ class Dispatcher(object):
             self.send_email = kwargs.get('send_email', PostmarkEmailSender(request))
             self.send_sms = kwargs.get('send_sms', TwilioSMSSender(request))
         self.query_due = kwargs.get('query_due', repo.QueryDueDispatches())
+        self.notification_data = kwargs.get('notification_data', repo.NotificationJSON())
+        self.dispatch_data = kwargs.get('dispatch_data', repo.DispatchJSON())
 
     def dispatch(self, notifications):
         """Dispatches a notification directly without waiting for the
@@ -145,11 +162,11 @@ class Dispatcher(object):
         """
 
         results = []
+        now = self.utcnow()
 
-        dt = self.utcnow()
-        for n in notifications:
-            for d in self.query_due(n, dt):
-                r = self.send(d)
+        for notification in notifications:
+            for dispatch in self.query_due(notification, now):
+                r = self.send(dispatch)
                 results.append(r)
 
         return results
@@ -162,7 +179,8 @@ class Dispatcher(object):
         """
 
         # Unpack.
-        event = dispatch.notification.event
+        notification = dispatch.notification
+        event = notification.event
         target = event.parent
 
         # Resolve the view function and call it to get the data.
@@ -190,14 +208,20 @@ class Dispatcher(object):
         spec = dispatch.single_spec
 
         # Send.
-        return_value = sender(spec, data)
+        message_data = sender(spec, data)
 
         # Mark the dispatch as sent.
         # XXX what semantics are we providing -- e.g.: scenarios where the sending
         # fails in the background?
         dispatch.sent = self.utcnow()
         self.session.add(dispatch)
-        return return_value
+
+        # Return a bunch of information that's useful for ftesting / debugging.
+        return {
+            'message': message_data,
+            'dispatch': self.dispatch_data(dispatch),
+            'notification': self.notification_data(notification),
+        }
 
 def includeme(config):
     """Apply default settings, configure postmark and twilio clients and

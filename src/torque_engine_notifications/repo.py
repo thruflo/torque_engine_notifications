@@ -38,11 +38,11 @@ class Notify(object):
         self.get_prefs = kwargs.get('get_prefs', GetOrCreatePreferences())
         self.spawn = kwargs.get('spawn', SpawnDispatches())
 
-    def __call__(self, user, event, mapping, **spawn_kwargs):
+    def __call__(self, user, event, mapping, roles, **spawn_kwargs):
         """Create and conditionally spawn."""
 
         # Create.
-        notification = self.factory(user, event)
+        notification = self.factory(user, event, roles)
 
         # If we should send immediately then spawn the dispatches.
         prefs = self.get_prefs(user)
@@ -60,7 +60,7 @@ class NotificationFactory(object):
         self.model_cls = kwargs.get('model_cls', orm.Notification)
         self.session = kwargs.get('session', bm.Session)
 
-    def __call__(self, user, event):
+    def __call__(self, user, event, roles):
         """Create, save, flush and return a ``Notification``."""
 
         # Unpack.
@@ -71,6 +71,7 @@ class NotificationFactory(object):
         inst = self.model_cls()
         inst.user = user
         inst.event = event
+        inst.roles = roles # a list of role names
 
         # Save, flush and return.
         session.add(inst)
@@ -92,6 +93,7 @@ class NotificationJSON(object):
                 'id': inst.event_id,
             }
             'read': inst.read,
+            'roles': inst.roles,
             'spawned': inst.spawned,
             'user': {
                 'type': 'auth_users',
