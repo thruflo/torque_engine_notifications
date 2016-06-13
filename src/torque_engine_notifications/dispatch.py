@@ -2,6 +2,8 @@
 
 """Dispatch notifications."""
 
+import json
+
 from datetime import datetime
 
 from pyramid import path as pm_path
@@ -9,7 +11,62 @@ from pyramid import path as pm_path
 from . import repo
 from . import util
 
-class NotificationDispatcher(object):
+class PostmarkEmailSender(object):
+    """Send an email using the postmarkapp.com service."""
+
+    def __init__(self, request):
+        self.request = request
+
+    def __call__(self, spec, data):
+        request = self.request
+        email = request.render_email(
+            data['from_address'],
+            data['to_address']
+            data['subject']
+            data['spec']
+            data,
+            bcc=data['bcc_address'],
+        )
+        return request.send_email(email)
+
+class StubEmailSender(object):
+    """Render and print an email, rather than actually sending it."""
+
+    def __init__(self, request):
+        self.request = request
+
+    def __call__(self, spec, data):
+        request = self.request
+        email = request.render_email(
+            data['from_address'],
+            data['to_address']
+            data['subject']
+            data['spec']
+            data,
+            bcc=data['bcc_address'],
+        )
+        email_data = email.to_json_message()
+        logger.info(('StubEmailSender', 'would send email'))
+        logger.info(json.dumps(email_data, indent=2))
+        return email_data
+
+### TODO: a real ``SMSSender``.
+
+class StubSMSSender(object):
+    """Render and print an SMS, rather than actually sending it."""
+
+    def __init__(self, request):
+        self.request = request
+
+    def __call__(self, spec, data):
+        request = self.request
+        sms = NotImplemented
+        sms_data = NotImplemented
+        logger.info(('StubSMSSender', 'would send sms'))
+        logger.info(json.dumps(sms_data, indent=2))
+        return sms_data
+
+class Dispatcher(object):
     """Utility that provides an api to:
 
       - ``dispatch()`` notifications; and
@@ -18,15 +75,20 @@ class NotificationDispatcher(object):
 
     channels = ('email', 'sms',) # 'pigeon'
 
-    def __init__(self, request):
+    def __init__(self, request, **kwargs):
         self.request = request
         self.now = datetime.utcnow
         self.from_email = site_email(request)
-        # XXX swap these out acording to the environment.
-        self.due_dispatches = repo.QueryDueDispatches()
-        self.email_sender = request.send_email
-        self.sms_sender = NotImplemented
         self.resolve = pm_path.DottedNameResolver().resolve
+        # Swap out utilities according to the environment.
+        is_testing = request.environ.get('paste.testing', False)
+        if is_testing:
+            self.send_email = kwargs.get('send_email', PostmarkEmailSender(request))
+            self.send_sms = kwargs.get('send_sms', NotImplemented)
+        else:
+            self.send_email = kwargs.get('send_email', StubEmailSender(request))
+            self.send_sms = kwargs.get('send_sms', StubSMSSender(request))
+        self.query_due = kwargs.get('query_due', repo.QueryDueDispatches())
 
     def dispatch(self, notifications):
         """Dispatches a notification directly without waiting for the
@@ -37,7 +99,7 @@ class NotificationDispatcher(object):
 
         dt = self.utcnow()
         for n in notifications:
-            for d in self.due_dispatches(n, dt):
+            for d in self.query_due(n, dt):
                 r = self.send(d)
                 results.append(r)
 
@@ -87,23 +149,7 @@ class NotificationDispatcher(object):
         # fails in the background?
         dispatch.sent = self.utcnow()
         self.session.add(dispatch)
-
         return return_value
-
-    def send_email(self, spec, data):
-        email = request.render_email(
-            data['from_address'],
-            data['to_address']
-            data['subject']
-            data['spec']
-            data,
-            bcc=data['bcc_address'],
-        )
-        return self.email_sender(email)
-
-    def send_sms(self, spec, data):
-        sms = NotImplemented
-        return self.sms_sender(sms)
 
 def includeme(config):
     config.include('pyramid_postmark')
