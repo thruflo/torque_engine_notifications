@@ -16,7 +16,6 @@ from pyramid import renderers
 from pyramid_weblayer import tx
 
 from . import repo
-from . import util
 
 DEFAULTS = {
     'twilio.account_sid': os.environ.get('TWILIO_ACCOUNT_SID'),

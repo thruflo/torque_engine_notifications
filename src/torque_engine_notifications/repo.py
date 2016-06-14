@@ -26,7 +26,6 @@ import pyramid_basemodel as bm
 
 from . import constants
 from . import orm
-from . import util
 
 class Notify(object):
     """Create a notification and iff the user's notification preferences are
