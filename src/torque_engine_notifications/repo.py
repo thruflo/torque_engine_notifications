@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-"""Create and lookup notifications."""
+"""Create, access, update and represent the ORM classes."""
 
 __all__ = [
     'DispatchJSON',
