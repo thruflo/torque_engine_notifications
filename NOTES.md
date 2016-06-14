@@ -1,20 +1,16 @@
 
-What do we need to do here?
+See `main.SpawnAndDispatch`:
+- impl the queries
+- index any hot db fields
 
-* go through and tidy up the orm and repo
+Then see `config.notify_directive`
+- patch the mapping
 
-* what is the overall algorithm
-* can we document it?
+Then implement the view
+- the `notify` route with a single view
+- single and batch
 
-* can we documate the ideal engine-user api?
-  - make it as implicit as possible, i.e.: there's a naming convention based on
-    some global config?
-  - make the view function generic unless it needs to be overridden?
-  - ...?
-
-* can we then write blind tests for this syntax?
-* then fix up the impl so the tests pass?
-
-* look at the main driver:
-  - can it just execute directly?
-  - if using views, could it use tasks?
+Then carry on from there by:
+- getting a basic test to pass
+- driving the `config.notify(...)` syntax so we get the idea API
+  and implicit defaults
