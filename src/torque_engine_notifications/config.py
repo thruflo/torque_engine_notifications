@@ -1,6 +1,25 @@
 # -*- coding: utf-8 -*-
 
-"""XXX"""
+"""Pyramid framework extensions to provide:
+
+  i. ``config.notify`` and ``config.role_mapping`` directives
+  ii. ``request.role_mapping`` method
+
+  ``config.notify(interface, events, roles, mapping)`` is a high
+  level directive that uses the underlying ``add_engine_subscriber``
+  machinery to subscribe to the ``events`` on contexts providing
+  ``interface`` and handle them by sending notifications to the
+  users registered as having the given ``roles`` optionally using
+  the template specs and view functions defined in the ``mapping``.
+
+  ``config.role_mapping(interface, mapping)`` registers a mapping
+  of `role: users` for a given interface, where `users` is a data
+  structure that provides enough information to get the users who
+  have the given role for contexts providing the interface.
+
+  ``request.role_mapping(context)`` get the role registered role
+  mapping for a given context.
+"""
 
 import logging
 logger = logging.getLogger(__name__)
