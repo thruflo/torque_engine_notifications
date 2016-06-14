@@ -1,92 +1,73 @@
 # -*- coding: utf-8 -*-
 
+"""Provides the main polling entrypoint to dispatch notifications that are
+  now due to be sent.
+
+  There are two ways of using:
+
+  a. via the `main()` function / ` command line via the
+  Main console script entry point.
+"""
+
+import logging
+logger = logging.getLogger(__name__)
+
 import os
-import datetime
-import json
-import requests
+import time
 import transaction
 
-from sqlalchemy import create_engine
-from pyramid_basemodel import bind_engine, save, Session
+from ntorque import util as nt_util
+from ntorque.work import ntw_main
 
-from . import constants
-from . import orm
 from . import repo
-from . import util
 
-env = os.environ
-NOTIFICATION_SINGLE_ENDPOINT = env.get('NOTIFICATION_SINGLE_ENDPOINT', None)
+POLL_DELAY = os.environ.get('TORQUE_ENGINE_NOTIFICATIONS_POLL_DELAY', 15)
 
-DEFAULTS = {
-    'torque_engine_notifications.api_key': os.environ.get('TORQUE_ENGINE_NOTIFICATIONS_API_KEY'),
-}
+def bootstrap():
+    """Bootstrap the pyramid environment."""
 
-def post_notification_dispatch(dispatch):
+    bootstrapper = ntw_main.Bootstrap()
+    config = bootstrapper()
+    config.commit()
+    return config
 
-    headers = {}
-    for item in c.ENGINE_API_KEY_NAMES:
-        key = '{0}'.format(item)
-        headers[key] = DEFAULTS['torque_engine_notifications.api_key']
+def wrap_in_tx(target, *args, **kwargs):
+    """Call ``target(*args, **kwargs)`` within a transaction."""
 
-    _ = requests.post(
-                    NOTIFICATION_SINGLE_ENDPOINT,
-                    headers=headers,
-                    data=json.dumps(
-                        {'dispatch_id': dispatch.id}))
-
-def dispatch_user_notifications(user, user_notifications):
-    """ 4. for each channel loop and either write out a single or a batch dispatch task with the
-        Dispatcher ids e.g: /dispatch_email, /dispatch_sms and etc.
-    """
-
-    raise NotImplementedError('XXX how is this using channels???')
-
-    for ch in constants.CHANNELS.values():
-        # XXX check for preferences e.g: and user.channel == ch
-        to_dispatch = [d for d in user_notifications if d.category == ch]
-        for dispatch in to_dispatch:
-            post_notification_dispatch(dispatch)
-        else:
-            print 'nothing here', to_dispatch
-    Session.flush()
-
-
-def run():
-    # Bind to the database.
-    engine = create_engine(os.environ['DATABASE_URL'])
-    bind_engine(engine, should_create=False)
-
-    # Prepare.
-    notification_cls = orm.Notification
-    dispatch_cls = orm.Dispatch
-    preferences_factory = repo.PreferencesFactory()
-    now = datetime.datetime.utcnow()
-
-    # Run the algorithm.
     with transaction.manager:
+        return target(*args, **kwargs)
 
-        # XXX this is core business logic!
-        # put it in the bloody repo!
+def poll():
+    """Poll forever for new notifications to dispatch."""
 
-        # 1. ignore all the notifications from the Notification table that have read field set.
-        unread_notifications = dispatch_cls.query.join(notification_cls).filter(notification_cls.read == None)
+    config = bootstrap()
+    dispatcher = Dispatcher()
+    try:
+        while True:
+            t1 = time.time()
+            r = nt_util.call_in_process(wrap_in_tx, dispatcher)
+            logger.info(r)
+            t2 = time.time()
+            elapsed = t2 - t1
+            delay = POLL_DELAY - elapsed
+            if delay > 0:
+                time.sleep(delay)
+    except KeyboardInterrupt:
+        pass
 
-        # 2. get all of the non duplicated user ids who are due to dispatch and have not been sent.
-        due_to_dispatch = unread_notifications.filter(dispatch_cls.due <= now).filter(dispatch_cls.sent == None)
-        user_ids_to_dispatch = set()
-        for dispatch in due_to_dispatch.all():
-            user_ids_to_dispatch.add(dispatch.notification.user_id)
+def dispatch():
+    """Dispatch due notifications."""
 
-        # 3. for each user id get all of the notifications grouped by channel
-        for user_id in user_ids_to_dispatch:
-            # Build the NotificationPreference object so we can get the preferences.
-            prefs = orm.Preferences.query.filter_by(user_id=user_id).all()[-1]
-            # If we don't have a notification preference object, we just create it on the fly.
-            if prefs is None:
-                prefs = preferences_factory(user_id)
-            user_notifications = due_to_dispatch.filter(notification_cls.user_id == user_id).all()
-            dispatch_user_notifications(prefs, user_notifications)
+    config = bootstrap()
+    dispatcher = Dispatcher()
+    r = wrap_in_tx(dispatcher)
+    logger.info(r)
 
+class Dispatcher(object):
+    """"""
 
-if __name__ == '__main__':
-    run()
+    def __init__(self):
+        pass
+
+    def __call__(self):
+        pass
