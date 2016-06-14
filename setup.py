@@ -31,7 +31,7 @@ setup(
         'pyramid_simpleauth',
         'pyramid_torque_engine',
         'pyramid_postmark',
-        # 'pyramid_twilio',
+        'twilio',
     ],
     tests_require = [
         'coverage',
