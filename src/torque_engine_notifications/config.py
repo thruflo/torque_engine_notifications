@@ -107,13 +107,25 @@ def notify_directive(config, interface, events, roles, mapping, **kwargs):
         config.add_engine_subscriber(interface, events, o.NOTIFY, notify)
 
     discriminator = (
-        'torque_engine_notifications',
-        'notification',
+        u'torque_engine_notifications',
+        u'notification',
         interface,
         events,
         roles,
     )
-    config.action(discriminator, register)
+    intr = config.introspectable(
+        category_name=u'torque_engine_notifications',
+        discriminator=discriminator[1:],
+        title=u'Notification',
+        type_name=u'notify',
+    )
+    intr['value'] = (
+        interface,
+        roles,
+        o.NOTIFY,
+        events,
+    )
+    config.action(discriminator, register, introspectables=(intr,))
 
 def register_role_mapping(config, interface, mapping):
     """Configuration directive to register a role mapping for a given interface."""
@@ -124,8 +136,22 @@ def register_role_mapping(config, interface, mapping):
     def register():
         role_mapping[interface] = mapping
 
-    discriminator = ('torque_engine_notifications', 'role_mapping', interface,)
-    config.action(discriminator, register)
+    discriminator = (
+        u'torque_engine_notifications',
+        u'role_mapping',
+        interface,
+    )
+    intr = config.introspectable(
+        category_name=u'torque_engine_notifications',
+        discriminator=discriminator[1:],
+        title=u'Role Mapping',
+        type_name=u'role_mapping',
+    )
+    intr['value'] = (
+        interface,
+        mapping,
+    )
+    config.action(discriminator, register, introspectables=(intr,))
 
 def get_role_mapping(request, interface):
     """Request method to get the role mapping registered for a given interface."""
