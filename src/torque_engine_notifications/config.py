@@ -11,13 +11,14 @@ from pyramid_simpleauth import model as sa_model
 
 from . import repo
 
+ROLE_MAPPING_NAME = u'torque_engine_notifications.role_mapping'
+
 class NotificationHandler(object):
     """Handle events by dispatching notifications. Instances of this class are
       registered as handlers for work engine events.
     """
 
-    def __init__(self, interface, roles, mapping, delay=None, bcc=None, **kwargs):
-        self.interface = interface
+    def __init__(self, roles, mapping, delay=None, bcc=None, **kwargs):
         self.roles = roles
         self.mapping = mapping
         self.spawn_kwargs = dict(delay=delay, bcc=bcc)
@@ -30,7 +31,6 @@ class NotificationHandler(object):
         """
 
         # Unpack.
-        interface = self.interface
         mapping = self.mapping
         notify = self.notify
         roles = self.roles
@@ -49,7 +49,7 @@ class NotificationHandler(object):
         #   like `@thruflo`
         # iii. a function that returns a user or users
         users_to_roles = collections.defaultdict(list)
-        role_mapping = request.role_mapping(interface)
+        role_mapping = request.role_mapping(context)
         for role in roles:
             value = role_mapping.get(role)
             if not value:
@@ -62,7 +62,7 @@ class NotificationHandler(object):
                 if user:
                     users_to_roles[user].append(role)
             elif callable(value):
-                users = value(request, context, interface=interface, role=role)
+                users = value(request, context, role=role)
                 if users:
                     if not hasattr(users, '__iter__'):
                         users = [users]
@@ -101,7 +101,7 @@ def notify_directive(config, interface, events, roles, mapping, **kwargs):
         roles = [roles]
 
     o = engine_constants.OPERATIONS
-    notify = Notifier(interface, roles, mapping, **kwargs)
+    notify = Notifier(roles, mapping, **kwargs)
 
     def register():
         config.add_engine_subscriber(interface, events, o.NOTIFY, notify)
@@ -121,20 +121,18 @@ def notify_directive(config, interface, events, roles, mapping, **kwargs):
     )
     intr['value'] = (
         interface,
-        roles,
-        o.NOTIFY,
         events,
+        o.NOTIFY,
+        roles,
     )
     config.action(discriminator, register, introspectables=(intr,))
 
 def register_role_mapping(config, interface, mapping):
     """Configuration directive to register a role mapping for a given interface."""
 
-    registry = config.registry
-    mapping = registry.role_mapping
-
     def register():
-        role_mapping[interface] = mapping
+        registry = config.registry
+        registry.registerUtility(mapping, interface, name=ROLE_MAPPING_NAME)
 
     discriminator = (
         u'torque_engine_notifications',
@@ -153,12 +151,11 @@ def register_role_mapping(config, interface, mapping):
     )
     config.action(discriminator, register, introspectables=(intr,))
 
-def get_role_mapping(request, interface):
-    """Request method to get the role mapping registered for a given interface."""
+def get_role_mapping(request, context):
+    """Request method to get the role mapping registered for a given context."""
 
     registry = request.registry
-    mapping = registry.role_mapping
-    return mapping.get(interface)
+    return registry.queryUtility(context, ROLE_MAPPING_NAME)
 
 def includeme(config):
     """Handle `/events` requests and provide subscription directive."""
@@ -169,7 +166,6 @@ def includeme(config):
     config.add_directive('notify', notify_directive)
 
     # `config.role_mapping` directive.
-    config.registry.role_mapping = {}
     config.add_directive('role_mapping', register_role_mapping)
 
     # `request.role_mapping` method.
