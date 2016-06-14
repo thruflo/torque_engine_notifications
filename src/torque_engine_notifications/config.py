@@ -66,29 +66,6 @@ class NotificationHandler(object):
         all_dispatches = []
         dispatch_results = []
 
-        """
-            # This code is superceeded now we only have one role.
-            users_to_roles = collections.defaultdict(list)
-            role_mapping = request.role_mapping(context)
-            value = role_mapping.get(role)
-            if not value:
-                continue
-            if isinstance(value, basestring):
-                if value.startswith('.'): # e.g.: .user
-                    user = getattr(context, value[1:], None)
-                elif value.startswith('@'): # e.g.: @thruflo
-                    user = self.get_user(username=value[1:])
-                if user:
-                    users_to_roles[user].append(role)
-            elif callable(value):
-                users = value(request, context, role=role)
-                if users:
-                    if not hasattr(users, '__iter__'):
-                        users = [users]
-                    for user in users:
-                        users_to_roles[user].append(role)
-        """
-
         # Build a list of users. Note that the return value from
         # `role_mapping.get(role)` can be:
         # i. a context relative attribute name in the form of a string starting
