@@ -27,26 +27,48 @@ import pyramid_basemodel as bm
 from . import constants
 from . import orm
 
+
+
+
+class SpawnOutstandingNotifications(object):
+    """XXX ignore notifications that are more than two days old -- that
+      way we minimise edge cases where someone switches on their
+      notifications and gets spammed with old events.
+    """
+
+
+
+
+
+
+
+
 class Notify(object):
     """Create a notification and iff the user's notification preferences are
       *immediate* then also spawn the necessary dispatch(es).
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, request, **kwargs):
+        self.request = request
         self.factory = kwargs.get('factory', NotificationFactory())
-        self.get_prefs = kwargs.get('get_prefs', GetOrCreatePreferences())
-        self.spawn = kwargs.get('spawn', SpawnDispatches())
+        self.get_preferences = kwargs.get('get_prefs', GetOrCreatePreferences())
+        self.spawn = kwargs.get('spawn', SpawnDispatches(request))
 
-    def __call__(self, user, event, mapping, roles, **spawn_kwargs):
+    def __call__(self, user, event, role, name=None, delay=0):
         """Create and conditionally spawn."""
 
+        # Get the user's notification preferences.
+        preferences = self.get_preferences(user)
+
+        # If they're on `never` then don't create the notification.
+        if
+
         # Create.
-        notification = self.factory(user, event, roles)
+        notification = self.factory(user, event, role, name=name, delay=delay)
 
         # If we should send immediately then spawn the dispatches.
-        prefs = self.get_prefs(user)
-        if prefs.send_immediately:
-            dispatches = self.spawn(notification, prefs, mapping, **spawn_kwargs)
+        if preferences.send_immediately:
+            dispatches = self.spawn(notification, preferences=preferences)
             return notification, dispatches
 
         # Otherwise our work is done.
@@ -59,18 +81,24 @@ class NotificationFactory(object):
         self.model_cls = kwargs.get('model_cls', orm.Notification)
         self.session = kwargs.get('session', bm.Session)
 
-    def __call__(self, user, event, roles):
+    def __call__(self, user, event, role, name=None, delay=0):
         """Create, save, flush and return a ``Notification``."""
 
         # Unpack.
         session = self.session
         request = self.request
 
+        # Prepare.
+        now = datetime.utcnow()
+        due = now + relativedelta(seconds=delay)
+
         # Create the notification.
         inst = self.model_cls()
         inst.user = user
         inst.event = event
-        inst.roles = roles # a list of role names
+        inst.role = role
+        inst.name = name
+        inst.due = due
 
         # Save, flush and return.
         session.add(inst)
@@ -92,7 +120,9 @@ class NotificationJSON(object):
                 'id': inst.event_id,
             }
             'read': inst.read,
-            'roles': inst.roles,
+            'role': inst.role,
+            'name': inst.name,
+            'due': inst.due,
             'spawned': inst.spawned,
             'user': {
                 'type': 'auth_users',
@@ -156,37 +186,48 @@ class PreferencesJSON(object):
 class SpawnDispatches(object):
     """Spawn dispatches for a notification."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, request, **kwargs):
+        self.request = request
         self.get_address = kwargs.get('get_address', GetDispatchAddress())
         self.model_cls = kwargs.get('model_cls', orm.Dispatch)
 
-    def __call__(self, notification, prefs, mapping, delay=None, bcc=None):
-        """Given a notification, the current user notification preferences and the
-          configured dispatch mapping, spawn the necessary notification dispatches.
-        """
+    def __call__(self, notification, preferences=None):
+        """Given a notification, spawn the necessary notification dispatches."""
 
         # Unpack.
+        request = self.request
         get_address = self.get_address
         model_cls = self.model_cls
 
+        # Get the prefs, role mapping and dispatch mapping.
+        if preferences is None:
+            user = notification.user
+            preferences = user.notification_preferences
+        event = notification.event
+        context = event.parent
+        role = notification.role
+        name = notification.name
+        dispatch_mapping = request.dispatch_mapping(context, event, role, name)
+
         # If there's nothing to send, we're golden.
-        config = mapping.get(prefs.channel, None)
+        if not dispatch_mapping:
+            return
+        channel = preferences.channel
+        config = dispatch_mapping.get(channel, None)
         if not config:
             return
 
         # Otherwise prepare...
-        channel = prefs.channel
-        address = get_address(notification.user, channel)
-        now = datetime.utcnow()
-        due = now
-        if delay:
-            due += relativedelta(seconds=delay)
+        to_address = get_address(notification.user, channel)
 
         # ... and spawn the dispatch.
-        inst = model_cls(address=address, channel=channel, due=due)
+        inst = model_cls()
         inst.view = config['view']
         inst.spec = config['spec']
         inst.batch_spec = = config['batch_spec']
+        inst.bcc_address = config['bcc_address']
+        inst.channel = channel
+        inst.to_address = to_address
         inst.notification = notification
 
         # Record that the notification has been dealt with.
@@ -233,6 +274,9 @@ class QueryDueDispatches(object):
         model_cls = self.model_cls
         query = model_cls.query.filter_by(notification_id=notification.id)
         query = query.filter(model_cls.due<dt)
+        raise NotImplementedError(
+            'no due anymore, what about also checking not send etc.?'
+        )
         return query
 
 class DispatchJSON(object):
@@ -248,7 +292,6 @@ class DispatchJSON(object):
             'batch_spec': inst.batch_spec
             'bcc_address': inst.bcc_address,
             'channel': inst.channel,
-            'due': inst.due,
             'notification': {
                 'type': 'notifications',
                 'id': inst.notification_id

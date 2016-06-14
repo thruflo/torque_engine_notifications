@@ -99,28 +99,30 @@ class Notification(bm.Base, bm.BaseMixin):
         ),
     )
 
-    # Optionally recording the roles that the user matched when
-    # creating this notification. This allows template rendering
-    # to adapt according to the role.
-    role_str = schema.Column(
-        types.Unicode(128),
+    # Record the role that the user matched when creating this
+    # notification. This allows template rendering to adapt
+    # according to the role *and* for the dispatch mapping to
+    # be registered against the `interface, event, role` and
+    # then looked up by `context, event, role` at spawn time so
+    # that we *always spawn dispatches with the latest config*.
+    role = schema.Column(
+        types.Unicode(64),
     )
-    @property
-    def roles(self):
-        return self.role_str.split(u',')
 
-    @roles.setter
-    def roles(self, roles):
-        if not roles:
-            roles = []
-        self.role_str = u','.join(roles)
+    # When is this notification due to be spawned?
+    due = schema.Column(
+        types.DateTime,
+        nullable=False,
+    )
 
-    # Record when dispatches have been spawned.
+    # When *was* it spawned?
     spawned = schema.Column(
         types.DateTime,
     )
 
-    # Potentially record when this notification has been read.
+    # Potentially record when it was read. (Notifications that are read before
+    # they're spawned need not be dispatched -- because the user has already
+    # seen them).
     read = schema.Column(
         types.DateTime,
     )
@@ -168,11 +170,7 @@ class Dispatch(bm.Base, bm.BaseMixin):
         types.Unicode(255),
     )
 
-    # When should it be sent and when was it sent?
-    due = schema.Column(
-        types.DateTime,
-        nullable=False,
-    )
+    # When was it sent?
     sent = schema.Column(
         types.DateTime,
     )

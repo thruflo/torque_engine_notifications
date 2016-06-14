@@ -195,8 +195,8 @@ class Dispatcher(object):
         default_subject = u'{0} {1}'.format(event.target, event.action)
         defaults = {
             'subject': default_subject,
-            'to_address': dispatch.address,
-            'bcc_address': dispatch.bcc,
+            'to_address': dispatch.to_address,
+            'bcc_address': dispatch.bcc_address,
             'target': target,
             'event': event,
             'action': event.action,
