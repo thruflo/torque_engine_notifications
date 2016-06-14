@@ -100,13 +100,16 @@ class Notification(bm.Base, bm.BaseMixin):
     )
 
     # Record the role that the user matched when creating this
-    # notification. This allows template rendering to adapt
-    # according to the role *and* for the dispatch mapping to
-    # be registered against the `interface, event, role` and
-    # then looked up by `context, event, role` at spawn time so
-    # that we *always spawn dispatches with the latest config*.
+    # notification and any discriminating name of the config rule.
+    # This allows template rendering to adapt according to the role
+    # *and* for the dispatch mapping to be looked up by
+    # `context, event, role, name` at spawn time so that we always
+    # spawn dispatches with the latest config.
     role = schema.Column(
         types.Unicode(64),
+    )
+    name = schema.Column(
+        types.Unicode(32),
     )
 
     # When is this notification due to be spawned?

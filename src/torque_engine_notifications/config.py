@@ -3,7 +3,7 @@
 """Pyramid framework extensions to provide:
 
   i. ``config.notify`` and ``config.role_mapping`` directives
-  ii. ``request.role_mapping`` method
+  ii. ``request.role_mapping`` and ``request.dispatch_mapping`` methods
 
   ``config.notify(interface, events, roles, mapping)`` is a high
   level directive that uses the underlying ``add_engine_subscriber``
@@ -19,6 +19,10 @@
 
   ``request.role_mapping(context)`` get the role registered role
   mapping for a given context.
+
+  ``request.dispatch_mapping(context, dispatch_mapping_name)`` gets
+  the config registered against a notification, so that it can be used
+  when spawning dispatches.
 """
 
 import logging
@@ -31,10 +35,10 @@ from pyramid_simpleauth import model as sa_model
 from . import repo
 
 ROLE_MAPPING_NAME = u'torque_engine_notifications.role_mapping'
+DISPATCH_MAPPING_NAME = u'torque_engine_notifications.dispatch_mapping'
 
-def get_dispatch_mapping_name(event, roles, name=None):
-    role_str = u','.format(sorted(roles))
-    parts = [event, role_str]
+def get_dispatch_mapping_name(event, role, name=None):
+    parts = [DISPATCH_MAPPING_NAME, event, role]
     if name:
         parts.append(name)
     return u'::'.join(parts)
@@ -157,7 +161,7 @@ class RegistrationEnclosure(object):
         registry.registerUtility(mapping, interface, name=name)
         config.add_engine_subscriber(interface, event, operation, handler)
 
-def notify_directive(config, interface, events, roles, mapping, bcc=None, delay=0, name=None):
+def notify_directive(config, interface, events, roles, mapping, name=None, bcc=None, delay=0):
     """Configuration directive to register a notification event subscriber."""
 
     # Unpack.
@@ -209,7 +213,16 @@ def notify_directive(config, interface, events, roles, mapping, bcc=None, delay=
                 o.NOTIFY,
                 role,
             )
-            config.action(discriminator, registrations[mapping_name], introspectables=(intr,))
+            config.action(
+                discriminator,
+                registrations[mapping_name],
+                introspectables=(intr,),
+            )
+
+def get_dispatch_mapping(request, context, event, role, name=None):
+    registry = request.registry
+    dispatch_mapping_name = get_dispatch_mapping_name(event, role, name=name)
+    return registry.queryUtility(context, dispatch_mapping_name)
 
 def register_role_mapping(config, interface, mapping):
     """Configuration directive to register a role mapping for a given interface."""
@@ -242,15 +255,14 @@ def get_role_mapping(request, context):
     return registry.queryUtility(context, ROLE_MAPPING_NAME)
 
 def includeme(config):
-    """Handle `/events` requests and provide subscription directive."""
+    """Register notification directives and request methods."""
 
-    # `config.notify` directive.
+    # `config.notify` directive and `request.dispatch_mapping` method.
     o = engine_constants.OPERATIONS
     o.register('NOTIFY')
     config.add_directive('notify', notify_directive)
+    config.add_request_method('dispatch_mapping', get_dispatch_mapping)
 
-    # `config.role_mapping` directive.
+    # `config.role_mapping` directive and `request.role_mapping` method.
     config.add_directive('role_mapping', register_role_mapping)
-
-    # `request.role_mapping` method.
     config.add_request_method('role_mapping', get_role_mapping)
