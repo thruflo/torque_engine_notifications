@@ -27,17 +27,11 @@ import pyramid_basemodel as bm
 from . import constants
 from . import orm
 
-
-
-
 class SpawnOutstandingNotifications(object):
     """XXX ignore notifications that are more than two days old -- that
       way we minimise edge cases where someone switches on their
       notifications and gets spammed with old events.
     """
-
-
-
 
 
 
@@ -57,16 +51,11 @@ class Notify(object):
     def __call__(self, user, event, role, name=None, delay=0):
         """Create and conditionally spawn."""
 
-        # Get the user's notification preferences.
-        preferences = self.get_preferences(user)
-
-        # If they're on `never` then don't create the notification.
-        if
-
         # Create.
         notification = self.factory(user, event, role, name=name, delay=delay)
 
         # If we should send immediately then spawn the dispatches.
+        preferences = self.get_preferences(user)
         if preferences.send_immediately:
             dispatches = self.spawn(notification, preferences=preferences)
             return notification, dispatches

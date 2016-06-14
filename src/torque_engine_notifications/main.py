@@ -40,10 +40,7 @@ class SpawnAndDispatch(object):
         self.users_with_due_dispatches = kwargs.get('users_due', repo.UsersWithDueDispatches())
 
     def __call__(self):
-        """Spawn and then send any due notification dispatches.
-
-          XXX add indexes based on these queries.
-        """
+        """Spawn and then send any due notification dispatches."""
 
         # Get the notification preferences for all the users who have
         # notifications that have not been spawned.
