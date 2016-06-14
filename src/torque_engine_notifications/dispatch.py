@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 
-"""Dispatch notifications."""
+"""Provides a ``request.notifications`` api to dispatch notifications.
+
+  The default implementations use Postmarkapp.com to send emails
+  and Twilio to send SMS messages.
+"""
 
 import json
 from datetime import datetime
