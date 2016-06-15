@@ -9,6 +9,7 @@ CHANNELS = {
     'sms': u'SMS',
     # 'pigeon': u'PIGEON',
 }
+DEFAULT_CHANNEL = 'email'
 
 _frequencies = {
     'immediately': (u'IMMEDIATELY', 0),

@@ -23,8 +23,9 @@ DEFAULTS = {
     'twilio.from_address': os.environ.get('TWILIO_FROM_ADDRESS'),
 }
 
-def site_email(request):
-    settings = request.registry.settings
+def site_email(request, settings=None):
+    if settings is None:
+        settings = request.registry.settings
     site_email = settings.get('site.email')
     site_title = settings.get('site.title')
     return u'{0} <{1}>'.format(site_title, site_email)
@@ -191,8 +192,10 @@ class Dispatcher(object):
         data = view(request, target, dispatch, event, event.action) # XXX changed API
 
         # If necessary, patch in some defaults.
-        defaults = dispatch.__json__()
-        default_subject = u'{0} {1}'.format(event.target, event.action)
+        if dispatch.subject:
+            default_subject = dispatch.subject
+        else:
+            default_subject = u'{0} {1}'.format(event.target, event.action)
         defaults = {
             'subject': default_subject,
             'to_address': dispatch.to_address,

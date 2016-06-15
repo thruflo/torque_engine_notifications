@@ -211,11 +211,19 @@ class Dispatch(bm.Base, bm.BaseMixin):
     )
     view = schema.Column(
         types.Unicode(128),
+        nullable=False,
     )
     spec = schema.Column(
         types.Unicode(255),
+        nullable=False,
     )
     batch_spec = schema.Column(
+        types.Unicode(255),
+        nullable=False,
+    )
+
+    # Optional default subject.
+    subject = schema.Column(
         types.Unicode(255),
     )
 
@@ -223,6 +231,7 @@ class Dispatch(bm.Base, bm.BaseMixin):
     # primary identifier the channel requires.
     to_address = schema.Column(
         types.Unicode(255),
+        nullable=False,
     )
     bcc_address = schema.Column(
         types.Unicode(255),

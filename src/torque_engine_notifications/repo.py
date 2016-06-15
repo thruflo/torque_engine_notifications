@@ -290,6 +290,7 @@ class SpawnDispatches(object):
             return
 
         # Otherwise prepare...
+        meta = dispatch_mapping.get('meta')
         to_address = get_address(notification.user, channel)
 
         # ... and spawn the dispatch.
@@ -297,7 +298,8 @@ class SpawnDispatches(object):
         inst.view = config['view']
         inst.spec = config['spec']
         inst.batch_spec = = config['batch_spec']
-        inst.bcc_address = config['bcc_address']
+        inst.bcc_address = meta.get('bcc_address')
+        inst.subject = meta.get('subject')
         inst.channel = channel
         inst.to_address = to_address
         inst.notification = notification

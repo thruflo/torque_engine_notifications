@@ -32,6 +32,8 @@ import collections
 
 from pyramid_simpleauth import model as sa_model
 
+from . import constants
+from . import dispatch
 from . import repo
 
 ROLE_MAPPING_NAME = u'torque_engine_notifications.role_mapping'
@@ -42,6 +44,104 @@ def get_dispatch_mapping_name(event, role, name=None):
     if name:
         parts.append(name)
     return u'::'.join(parts)
+
+class AugmentDispatchMapping(object):
+    """Expand the given dispatch instructions into a full dictionary and
+      patch it with directly provided bcc and subject defaults.
+    """
+
+    def __init__(self, registry):
+        self.registry = registry
+        self.site_email = dispatch.site_email(None, settings=registry.settings)
+
+    def __call__(self, mapping, bcc=None, subject=None):
+        """Now, we want to end up with a structure like:
+
+              {
+                'email': {
+                  'view': 'dotted.path.to.view.function',
+                  'spec': 'templates:asset/spec.mako',
+                  'batch_spec': 'templates:asset/spec.mako',
+                },
+                'sms': {
+                  'view': 'dotted.path.to.view.function',
+                  'spec': 'templates:asset/spec.mako',
+                  'batch_spec': 'templates:asset/spec.mako',
+                },
+                'meta': {
+                  'bcc_address': None | 'user@domain.com',
+                  'subject': None | '10 Top Tips that will blow your mind.',
+                },
+              }
+
+          From statements in the form:
+
+              config.notify(IBill, s.PAID, 'customer', ...)
+
+          Where the ``...`` can be:
+
+              'template_:spec'
+              'dotted.path.to-view', 'template:spec'
+              'dotted.path.to-view', 'template:spec', 'batch_item:spec'
+
+          Or the full dictionary syntax above. N.b.: the SMS defaults to the
+          plain text version of the email.
+        """
+
+        # First prepare the metadata.
+        meta = {
+            'bcc_address': bcc,
+            'subject': subject,
+        }
+        if bcc is True:
+            meta['bcc_address'] = self.site_email
+
+        # Prepare.
+        channels = {}
+        view = NotImplemented # XXX default view
+        spec = NotImplemented # XXX default spec
+        batch_spec = NotImplemented # XXX default view
+
+        # Expand the shorthand versions:
+        is_shorthand = False
+        if isinstance(mapping, basestring):
+            spec = mapping
+            is_shorthand = True
+        elif hasattr(mapping, '__getitem__'):
+            if len(mapping) == 1:
+                spec = mapping
+            else:
+                view = mapping[0]
+                spec = mapping[1]
+                if len(mapping) > 2:
+                    batch_spec = mapping[2]
+            is_shorthand = True
+        if is_shorthand:
+            channels = {
+                constants.DEFAULT_CHANNEL: {
+                    'view': view,
+                    'spec': spec,
+                    'batch_spec': batch_spec,
+                }
+            }
+        elif mapping.has_key(constants.DEFAULT_CHANNEL):
+            channels = mapping
+        else:
+            channels = {
+                constants.DEFAULT_CHANNEL: mapping,
+            }
+
+        # So at this point we should have a dictionary as the mapping
+        # with at least the values for the default channel, which
+        # we copy over the other channels if necessary.
+        for channel in constants.CHANNELS:
+            if channel == constants.DEFAULT_CHANNEL:
+                continue
+            channels[channel] = channels[constants.DEFAULT_CHANNEL]
+
+        # And return the augmented mapping data.
+        channels.update({'meta': meta})
+        return channels
 
 class NotificationHandler(object):
     """Handle events by dispatching notifications. Instances of this class are
@@ -161,11 +261,13 @@ class RegistrationEnclosure(object):
         registry.registerUtility(mapping, interface, name=name)
         config.add_engine_subscriber(interface, event, operation, handler)
 
-def notify_directive(config, interface, events, roles, mapping, name=None, bcc=None, delay=0):
+def notify_directive(config, interface, events, roles, mapping, name=None,
+        bcc=None, subject=None, delay=0):
     """Configuration directive to register a notification event subscriber."""
 
     # Unpack.
     o = engine_constants.OPERATIONS
+    augment_mapping = AugmentDispatchMapping(config.registry)
 
     # Support single or multiple events and roles.
     if isinstance(events, basestring):
@@ -173,13 +275,8 @@ def notify_directive(config, interface, events, roles, mapping, name=None, bcc=N
     if isinstance(roles, basestring):
         roles = (roles,)
 
-    # Patch the bcc address into the mapping.
-    raise NotImplementedError(
-        """
-          More than just the bcc, we need to implement our defaults and
-          build up the explicit mapping accordingly.
-        """
-    )
+    # Patch the bcc address and subject into the mapping.
+    dispatch_mapping = augment_mapping(mapping, bcc=bcc, subject=subject)
 
     registrations = {}
     for event in events:
@@ -190,7 +287,7 @@ def notify_directive(config, interface, events, roles, mapping, name=None, bcc=N
                 config,
                 interface,
                 event,
-                mapping,
+                dispatch_mapping,
                 mapping_name,
                 o.NOTIFY,
                 handler,
