@@ -17,5 +17,9 @@ _frequencies = {
     'daily': (u'DAILY', 60 * 60 * 24),
     'never': (u'NEVER', sys.maxint),
 }
-FREQUENCIES = {k: v[0] for k, v in _frequencies.items()}
-DELTAS = {v[0]: v[1] for k, v in _frequencies.items()}
+FREQUENCIES = {
+    k: v[0] for k, v in _frequencies.items()
+}
+DELTAS = {
+    v[0]: v[1] for k, v in _frequencies.items()
+}

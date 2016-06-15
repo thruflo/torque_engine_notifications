@@ -6,14 +6,18 @@ __all__ = [
     'DispatchJSON',
     'GetDispatchAddress',
     'GetOrCreatePreferences',
+    'LastDispatched',
     'LookupDispatch',
     'Notify',
     'NotificationFactory',
     'NotificationJSON',
     'PreferencesFactory',
     'PreferencesJSON',
+    'PreferencesWithDueUnspawnedNotifications',
+    'PreferencesWithUnsentDispatches',
     'QueryDueDispatches',
     'SpawnDispatches',
+    'SpawnOutstandingNotifications',
 ]
 
 import logging
