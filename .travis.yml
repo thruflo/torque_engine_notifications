@@ -10,6 +10,6 @@ install:
 - "pip install -r requirements.txt"
 - "pip install -e ."
 before_script:
-  - psql -c "create database torque_engine_test ENCODING 'UTF8' TEMPLATE template0;" -U postgres
+  - psql -c "create database torque_engine_notifications_test ENCODING 'UTF8' TEMPLATE template0;" -U postgres
 script:
 - nosetests src

@@ -13,7 +13,7 @@ TEST_SETTINGS = {
     'basemodel.should_bind_engine': False,
     'sqlalchemy.url': os.environ.get(
         'DATABASE_URL',
-        'postgresql:///torque_engine_test'
+        'postgresql:///torque_engine_notifications_test'
     ),
     'handle_exceptions': os.environ.get(
         'HANDLE_EXCEPTIONS',
