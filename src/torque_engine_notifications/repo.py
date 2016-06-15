@@ -101,7 +101,7 @@ class NotificationJSON(object):
             'event': {
                 'type': 'activity_events',
                 'id': inst.event_id,
-            }
+            },
             'read': inst.read,
             'role': inst.role,
             'name': inst.name,
@@ -301,7 +301,7 @@ class SpawnDispatches(object):
         inst = model_cls()
         inst.view = config['view']
         inst.spec = config['spec']
-        inst.batch_spec = = config['batch_spec']
+        inst.batch_spec = config['batch_spec']
         inst.bcc_address = meta.get('bcc_address')
         inst.subject = meta.get('subject')
         inst.channel = channel
@@ -398,7 +398,7 @@ class DispatchJSON(object):
         return {
             'id': inst.id,
             'type': inst.class_slug,
-            'batch_spec': inst.batch_spec
+            'batch_spec': inst.batch_spec,
             'bcc_address': inst.bcc_address,
             'channel': inst.channel,
             'notification': {
@@ -406,7 +406,7 @@ class DispatchJSON(object):
                 'id': inst.notification_id
             },
             'sent': inst.sent,
-            'spec': inst.spec
+            'spec': inst.spec,
             'to_address': inst.to_address,
             'view': inst.view,
         }

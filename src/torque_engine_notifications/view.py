@@ -61,5 +61,5 @@ def includeme(config):
     """Expose ``/notify/:user_id``."""
 
     config.add_route('notify', 'notify/{user_id:\d+}')
-    config.add_view(notify_view, route_name='notify', request_method='POST'
+    config.add_view(notify_view, route_name='notify', request_method='POST',
             renderer='json')

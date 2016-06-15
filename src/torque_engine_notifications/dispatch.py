@@ -7,6 +7,8 @@
 """
 
 import json
+import os
+
 from datetime import datetime
 
 from twilio import rest as tw_rest
@@ -46,9 +48,9 @@ class PostmarkEmailSender(object):
         request = self.request
         email = request.render_email(
             self.from_address,
-            data['to_address']
-            data['subject']
-            data['spec']
+            data['to_address'],
+            data['subject'],
+            data['spec'],
             data,
             bcc=data['bcc_address'],
         )
@@ -77,7 +79,7 @@ class StubEmailSender(object):
             'data': email_data,
         }
 
-class TwilioAPI(request):
+class TwilioAPI(object):
     """Configure a Twilio rest api client to send SMSs with and provide
       a `send_sms` method that dispatches when the current transaction succeeds.
     """
@@ -160,7 +162,7 @@ class Dispatcher(object):
         self.notification_data = kwargs.get('notification_data', repo.NotificationJSON())
         self.dispatch_data = kwargs.get('dispatch_data', repo.DispatchJSON())
 
-    def notify(self, user, preferences=preferences):
+    def notify(self, user, preferences=None):
         """
           - get all the unsent dispatches
           - group them by channel

@@ -42,7 +42,7 @@ setup(
         'console_scripts': [
             # Runs forever, dispatching every
             # `TORQUE_ENGINE_NOTIFICATIONS_POLL_DELAY` seconds.
-            'notifications_poll = torque_engine_notifications.main:poll'
+            'notifications_poll = torque_engine_notifications.main:poll',
             # Runs once, dispatching anything that's due.
             'notifications_dispatch = torque_engine_notifications.main:dispatch',
         ]

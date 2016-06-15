@@ -49,12 +49,12 @@ class Preferences(bm.Base, bm.BaseMixin):
     # often they want to be notified.
     channel = schema.Column(
         types.Unicode(6),
-        default=constants['email'],
+        default=constants.CHANNELS['email'],
         nullable=False,
     )
     frequency = schema.Column(
         types.Unicode(96),
-        default=constants['immediately'],
+        default=constants.FREQUENCIES['immediately'],
         nullable=False,
     )
 
@@ -131,7 +131,7 @@ class Notification(bm.Base, bm.BaseMixin):
     user = orm.relationship(
         'pyramid_simpleauth.model.User',
         backref=orm.backref(
-            'notifications,
+            'notifications',
             single_parent=True,
         )
     )
@@ -145,7 +145,7 @@ class Notification(bm.Base, bm.BaseMixin):
     event = orm.relationship(
         'pyramid_torque_engine.orm.ActivityEvent',
         backref=orm.backref(
-            'notifications,
+            'notifications',
             single_parent=True,
         ),
     )
