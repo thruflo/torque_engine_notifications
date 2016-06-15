@@ -160,6 +160,17 @@ class Dispatcher(object):
         self.notification_data = kwargs.get('notification_data', repo.NotificationJSON())
         self.dispatch_data = kwargs.get('dispatch_data', repo.DispatchJSON())
 
+    def notify(self, user, preferences=preferences):
+        """
+          - get all the unsent dispatches
+          - group them by channel
+          - for each channel:
+              - send single or batch
+          - mark all the dispatches as sent
+        """
+
+        raise NotImplementedError
+
     def dispatch(self, notifications):
         """Dispatches a notification directly without waiting for the
           background process.

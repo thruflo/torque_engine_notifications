@@ -1,73 +1,65 @@
+# -*- coding: utf-8 -*-
+
+"""Expose work engine `notify/:user_id` webhook. This allows us to dispatch
+  ntorque tasks to actually send notifications.
 """
 
-  XXX
-      -> goes to a *single* webhook that either batches or singles depending
-      on the number of dispatches, i.e.: that's handled elsewhere
-      (n.b.: also group by channel)
+import logging
+logger = logging.getLogger(__name__)
 
-"""
+import colander
 
+from . import repo
 
+class NotifySchema(colander.Schema):
+    latest_hash = colander.SchemaNode(
+        colander.String(),
+        validator=colander.Length(min=20, max=20),
+    )
 
-# # -*- coding: utf-8 -*-
+def notify_view(request, **kwargs):
+    """Webhook to notify a user by sending either a single or batch message."""
 
-# """Expose `/notifications/dispatch/single` and `/notifications/dispatch/batch`."""
+    # Compose.
+    schema = kwargs.get('schema', NotifySchema())
+    lookup = kwargs.get('lookup', repo.LookupUser())
 
-# import logging
-# logger = logging.getLogger(__name__)
+    # Decode JSON.
+    try:
+        json = request.json
+    except ValueError as err:
+        request.response.status_int = 400
+        return {'error': str(err)}
 
-# import colander
+    # Validate.
+    try:
+        appstruct = schema.deserialize(json)
+    except colander.Invalid as err:
+        request.response.status_int = 400
+        return {'error': err.asdict()}
 
-# from . import repo
+    # Get the user and their notification preferences.
+    user_id = request.matchdict['user_id']
+    user = lookup(user_id)
+    if not user:
+        request.response.status_int = 404
+        return {'error': u'User not found.'}
+    preferences = user.notification_preferences
+    if not preferences:
+        request.response.status_int = 404
+        return {'error': u'User does not have notification preferences.'}
 
-# class SingleDispatchSchema(colander.Schema):
-#     dispatch_id = colander.SchemaNode(
-#         colander.Integer(),
-#     )
+    # If notifications have been switched off, then exit.
+    if preferences.frequency == constants.FREQUENCIES['never']:
+        dispatches = []
+    else: # We're away!
+        dispatches = request.notifications.notify(user, preferences=preferences)
 
-# def single_dispatch_view(request):
-#     """View to handle a single notification dispatch"""
+    return {'dispatched': dispatches}
 
-#     schema = SingleDispatchSchema()
-#     lookup = repo.LookupDispatch()
+def includeme(config):
+    """Expose ``/notify/:user_id``."""
 
-#     # Decode JSON.
-#     try:
-#         json = request.json
-#     except ValueError as err:
-#         request.response.status_int = 400
-#         return {'error': str(err)}
-
-#     # Validate.
-#     try:
-#         appstruct = schema.deserialize(json)
-#     except colander.Invalid as err:
-#         request.response.status_int = 400
-#         return {'error': err.asdict()}
-
-#     # Get the dispatch.
-#     dispatch_id = appstruct['dispatch_id']
-#     dispatch = lookup(dispatch_id)
-#     if not dispatch:
-#         request.response.status_int = 404
-#         return {'error': u'Notification dispatch not found.'}
-
-#     # Send it.
-#     dispatch = request.notifications.send(dispatch)
-#     return {'dispatched': [dispatch]}
-
-# def batch_dispatch_view(request):
-#     """View to handle a batch of dispatches."""
-
-#     raise NotImplementedError
-
-# def includeme(config):
-#     """Expose the ``/notifications`` route with single and batch views."""
-
-#     # Expose the route.
-#     config.add_route('notifications', '/notifications/dispatch')
-
-#     # Expose the two views.
-#     kw = dict(renderer='json', request_method='POST', route_name='notifications')
-#     config.add_view(single_dispatch_view, name='single', **kw)
-#     config.add_view(batch_dispatch_view, name='batch', **kw)
+    config.add_route('notify', 'notify/{user_id:\d+}')
+    config.add_view(notify_view, route_name='notify', request_method='POST'
+            renderer='json')
