@@ -27,16 +27,6 @@ import pyramid_basemodel as bm
 from . import constants
 from . import orm
 
-class SpawnOutstandingNotifications(object):
-    """XXX ignore notifications that are more than two days old -- that
-      way we minimise edge cases where someone switches on their
-      notifications and gets spammed with old events.
-    """
-
-
-
-
-
 class Notify(object):
     """Create a notification and iff the user's notification preferences are
       *immediate* then also spawn the necessary dispatch(es).
@@ -136,6 +126,7 @@ class PreferencesFactory(object):
 
     def __init__(self, **kwargs):
         self.model_cls = kwargs.get('model_cls', orm.Preferences)
+        self.hash_cls = kwargs.get('hash_cls', orm.PreferencesHash)
         self.session = kwargs.get('session', bm.Session)
 
     def __call__(self, user, **props):
@@ -145,14 +136,74 @@ class PreferencesFactory(object):
         model_cls = self.model_cls
         session = self.session
 
+        # Prepare.
+        latest_hash = self.hash_cls()
+        latest_hash.bump()
+
         # Create.
         inst = model_cls(**props)
         inst.user = user
+        inst.latest_hash = latest_hash
 
         # Save and return.
         session.add(inst)
+        session.add(latest_hash)
         session.flush()
         return inst
+
+class PreferencesWithDueUnspawnedNotifications(object):
+    """Get the preferences for all the users who have due and unspawned notifications."""
+
+    def __init__(self, request, **kwargs):
+        self.model_cls = kwargs.get('model_cls', orm.Preferences)
+        self.notification_cls = kwargs.get('notification_cls', orm.Notification)
+
+    def __call__(self, now):
+        """Query preferences, joined to filtered notifications through the
+          shared ``user_id`` value.
+        """
+
+        # Unpack.
+        model_cls = self.model_cls
+        notification_cls = self.notification_cls
+
+        # Build query.
+        through_user_id = notification_cls.user_id==model_cls.user_id
+        query = model_cls.query.join(notification_cls, through_user_id)
+        query = query.filter(notification_cls.spawned==None)
+        query = query.filter(notification_cls.read==None)
+        query = query.filter(notification_cls.due<now)
+
+        # Return the query as a generator.
+        return query
+
+class PreferencesWithUnsentDispatches(object):
+    """Get the preferences for all the users who have unsent dispatches."""
+
+    def __init__(self, request, **kwargs):
+        self.model_cls = kwargs.get('model_cls', orm.Preferences)
+        self.notification_cls = kwargs.get('notification_cls', orm.Notification)
+        self.dispatch_cls = kwargs.get('dispatch_cls', orm.Dispatch)
+
+    def __call__(self, now):
+        """Query preferences, joined to filtered notifications through the
+          shared ``user_id`` value.
+        """
+
+        # Unpack.
+        model_cls = self.model_cls
+        notification_cls = self.notification_cls
+        dispatch_cls = self.dispatch_cls
+
+        # Build query.
+        through_user_id = notification_cls.user_id==model_cls.user_id
+        through_notification_id = dispatch_cls.notification_id==notification_cls.id
+        query = model_cls.query.join(notification_cls, through_user_id)
+        query = model_cls.query.join(dispatch_cls, through_notification_id)
+        query = query.filter(dispatch_cls.sent==None)
+
+        # Return the query as a generator.
+        return query
 
 class PreferencesJSON(object):
     """JSON Represention of a user's notification preferences."""
@@ -171,6 +222,38 @@ class PreferencesJSON(object):
                 'id': inst.user_id,
             }
         }
+
+class SpawnOutstandingNotifications(object):
+    """Spawn dispatches for all of a user's due and unspawned notifications.
+
+      N.b.: we ignore notifications that are more than two days old -- that
+      way we minimise edge cases where someone switches on their
+      notifications and gets spammed with old events.
+    """
+
+    def __init__(self, request, **kwargs):
+        self.model_cls = kwargs.get('model_cls', orm.Notification)
+        self.spawn = kwargs.get('spawn', SpawnDispatches(request))
+
+    def __call__(self, user_id, now):
+        """"""
+
+        # Unpack.
+        model_cls = self.model_cls
+
+        # Build query.
+        query = model_cls.query.filter_by(user_id=user_id)
+        query = query.filter_by(spawned=None, read=None)
+        query = query.filter(model_cls.due<now)
+        query = query.order_by(model_cls.created.asc())
+
+        # Spawn the dispatches, returning a dict of ``notification: dispatches``
+        # in case useful for testing.
+        results = {}
+        for notification in query:
+            dispatches = self.spawn(notification)
+            results[notification] = dispatches
+        return results
 
 class SpawnDispatches(object):
     """Spawn dispatches for a notification."""
@@ -267,6 +350,37 @@ class QueryDueDispatches(object):
             'no due anymore, what about also checking not send etc.?'
         )
         return query
+
+class LastDispatched(object):
+    """Get the latest sent date of any dispatch to this user."""
+
+    def __init__(self, **kwargs):
+        self.model_cls = kwargs.get('model_cls', orm.Dispatch)
+        self.notification_cls = kwargs.get('notification_cls', orm.Notification)
+
+    def __call__(self, user_id, default=None):
+        """Query and return the ``sent`` value. Returns the ``default`` value
+          if no dispatch has been sent to this user.
+        """
+
+        # Unpack.
+        model_cls = self.model_cls
+        notification_cls = self.notification_cls
+
+        # Prepare a query for dispatches sent to this user.
+        query = model_cls.query.filter(model_cls.sent!=None)
+        query = query.join(notification_cls,
+                model_cls.notification_id==notification_cls.id)
+        query = query.filter(notification_cls.user_id==user_id)
+
+        # Get the most recent and return when it was sent.
+        query = query.order_by(model_cls.sent.desc())
+        inst = query.first()
+        if inst:
+            return inst.sent
+
+        # If there was dispatch, return the default value.
+        return default
 
 class DispatchJSON(object):
     """JSON Represention of a the dispatch of a notification."""

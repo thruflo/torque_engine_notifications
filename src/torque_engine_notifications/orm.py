@@ -8,6 +8,7 @@ __all__ = [
     'Dispatch',
     'Notification',
     'Preferences',
+    'PreferencesHash',
 ]
 
 import os
@@ -19,6 +20,7 @@ from sqlalchemy import schema
 from sqlalchemy import types
 
 import pyramid_basemodel as bm
+import pyramid_basemodel.util as bm_util
 
 from . import constants
 
@@ -65,6 +67,55 @@ class Preferences(bm.Base, bm.BaseMixin):
 
     def send_immediately(self):
         return self.frequency == constants.FREQUENCIES['immediately']
+
+class PreferencesHash(bm.Base):
+    """Seperate out a frequently updated hash property from the preferences
+      table, so that it's more performant to keep updating it.
+    """
+
+    __tablename__ = 'notification_pref_hashes'
+
+    # Has a primary key id but we don't bother with the other bm.BaseMixin
+    # column, in order to keep the table as simple as possible.
+    id = schema.Column(
+        types.Integer,
+        primary_key=True,
+    )
+
+    # Belongs (one-to-one) to a user's preferences and is eager loaded
+    # whenever the preferences are.
+    preferences_id = schema.Column(
+        'p_id',
+        types.Integer,
+        schema.ForeignKey('notification_preferences.id'),
+        nullable=False,
+    )
+    preferences = orm.relationship(
+        Preferences,
+        single_parent=True,
+        backref=orm.backref(
+            'latest_hash',
+            single_parent=True,
+            uselist=False,
+            lazy='joined'
+        )
+    )
+
+    # Has a random 10-bytes-of-entropy digest value, something like
+    # `da39a3ee5e6b4b0d3255`, which should be enough entropy to change
+    # whenever it's bumped (doesn't need to be globally unique).
+    value = schema.Column(
+        'v',
+        types.Unicode(20),
+        nullable=False,
+    )
+
+    def bump(self):
+        self.value = bm_util.generate_random_digest(num_bytes=10)
+        return self.value
+
+    def get_next_value(self):
+        return self.bump()
 
 class Notification(bm.Base, bm.BaseMixin):
     """Notify a user about an event."""
@@ -116,11 +167,13 @@ class Notification(bm.Base, bm.BaseMixin):
     due = schema.Column(
         types.DateTime,
         nullable=False,
+        index=True,
     )
 
     # When *was* it spawned?
     spawned = schema.Column(
         types.DateTime,
+        index=True,
     )
 
     # Potentially record when it was read. (Notifications that are read before
@@ -128,6 +181,7 @@ class Notification(bm.Base, bm.BaseMixin):
     # seen them).
     read = schema.Column(
         types.DateTime,
+        index=True,
     )
 
 class Dispatch(bm.Base, bm.BaseMixin):
@@ -152,7 +206,8 @@ class Dispatch(bm.Base, bm.BaseMixin):
     # How should it be sent?
     channel = schema.Column(
         types.Unicode(6),
-        nullable=False
+        nullable=False,
+        index=True,
     )
     view = schema.Column(
         types.Unicode(128),
@@ -176,4 +231,5 @@ class Dispatch(bm.Base, bm.BaseMixin):
     # When was it sent?
     sent = schema.Column(
         types.DateTime,
+        index=True,
     )

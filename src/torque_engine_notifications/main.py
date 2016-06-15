@@ -27,39 +27,54 @@ from ntorque.work import ntw_main
 from . import constants
 from . import repo
 
-POLL_DELAY = os.environ.get('TORQUE_ENGINE_NOTIFICATIONS_POLL_DELAY', 20)
+POLL_DELAY = os.environ.get('TORQUE_ENGINE_NOTIFICATIONS_POLL_DELAY', 90)
+DISPATCH_TIMEOUT = os.environ.get('TORQUE_ENGINE_NOTIFICATIONS_DISPATCH_TIMEOUT', 20)
 
 class SpawnAndDispatch(object):
-    """Spawn dispatches for any unspawned but due notifications."""
+    """Spawn and then send any due dispatches."""
 
-    def __init__(self, client, **kwargs):
-        self.client = client
-        self.due_preferences = kwargs.get('due_prefs', repo.DuePreferences())
+    def __init__(self, request, **kwargs):
+        self.request = request
         self.last_dispatched = kwargs.get('last_dispatched', repo.LastDispatched())
-        self.spawn_outstanding = kwargs.get('spawn', repo.SpawnOutstandingNotifications())
-        self.users_with_due_dispatches = kwargs.get('users_due', repo.UsersWithDueDispatches())
+        self.preferences_with_dispatches = kwargs.get('preferences_with_dispatches',
+                repo.PreferencesWithUnsentDispatches())
+        self.preferences_with_notifications = kwargs.get('preferences_with_notifications',
+                repo.PreferencesWithDueUnspawnedNotifications())
+        self.spawn_outstanding = kwargs.get('spawn_outstanding',
+                repo.SpawnOutstandingNotifications(request))
 
     def __call__(self):
-        """Spawn and then send any due notification dispatches."""
+        """Spawn dispatches for any notifications that are due and have not been
+          spawned. Then send any unsent dispatches.
+        """
 
         # Get the notification preferences for all the users who have
         # notifications that have not been spawned.
         now = datetime.utcnow()
-        for preferences in self.due_preferences():
+        for preferences in self.preferences_with_notifications(now):
             # Get the last time we dispatched to them
             user_id = prefs.user_id
-            last = self.last_dispatched(user_id)
+            last = self.last_dispatched(user_id, default=preferences.created)
             # If that plus the frequency is less than now then
-            # spawn their outstanding notifications.
+            # spawn dispatches to send the outstanding notifications.
             delta = constants.DELTAS[prefs.frequency]
             due = last + dateutil.relativedelta(seconds=delta)
             if due < now:
-                self.spawn_outstanding(user_id)
+                self.spawn_outstanding(user_id, now)
 
-        # That done, get all the users with dispatches that are due and
-        # use the torque client to dispatch a task to notify them.
-        for user_id in self.user_ids_with_due_dispatches():
-            self.client.dispatch('notify/{0}'.format(user_id))
+        # That done, get all the users with dispatches that are due and use the
+        # torque client to dispatch a background task to notify them.
+        # Note that the task records the ``preferences.latest_hash.value`` which
+        # we check in the view to make sure that the task hasn't been superceeded.
+        # This is by no means foolproof but it does give us some protection
+        # against transient task errors sending duplicate notifications.
+        engine = self.request.torque.engine
+        timeout = DISPATCH_TIMEOUT
+        for preferences in self.preferences_with_dispatches(): # now
+            path = 'notify/{0}'.format(preferences.user_id)
+            hash_value = preferences.latest_hash.get_next_value()
+            data = {'latest_hash': hash_value,}
+            engine.dispatch(path, data=data, timeout=timeout)
 
 def dispatch():
     """Console script entry point that dispatches any due notifications and
@@ -106,4 +121,4 @@ def bootstrap():
     config.include('pyramid_torque_engine.client')
     config.commit()
     request = threadlocal.get_current_request()
-    return request.torque.engine
+    return request
