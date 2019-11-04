@@ -1,5 +1,5 @@
 # Tests
-colander==1.2
+colander==1.7.0
 cornice==1.2.0
 ntorque==0.3.2
 mock==1.3.0
